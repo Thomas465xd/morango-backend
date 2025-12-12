@@ -9,7 +9,7 @@ type UserPayLoad = {
 // Token for Authentication (Login)
 export const generateJWT = (payload: UserPayLoad) => {
     const token = jwt.sign(payload, process.env.JWT_SECRET!, { 
-        expiresIn: "7d"  // Token expires in 12 hours
+        expiresIn: "7d"  // Token expires in 7 days
     });
     return token;
 }

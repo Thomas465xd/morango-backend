@@ -1,7 +1,8 @@
 import { Request, Response, NextFunction } from "express";
 import jwt, { decode } from "jsonwebtoken";
-import User, { UserInterface } from "../models/User";
+import User, { Roles, UserInterface } from "../models/User";
 import Token from "../models/Token";
+import { RequestConflictError } from "../errors/conflict-error";
 
 declare global {
     namespace Express {
@@ -63,9 +64,9 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
     }
 }
 
-// Validates for AdminToken
+//! Validates for AdminToken
 export const authorizeAdmin = (req: Request, res: Response, next: NextFunction) => {
-    if (!req.user || !req.user.admin) {
+    if (!req.user || req.user.role !== Roles.Admin) {
         res.status(403).json({ message: "Acceso denegado. Se requieren permisos de administrador." });
         return
     }
@@ -73,20 +74,15 @@ export const authorizeAdmin = (req: Request, res: Response, next: NextFunction) 
 };
 
 // Validates for an already existing users when registering a new one
-export const checkExistingUser = async (req: Request, res: Response, next: NextFunction) => {
-    try {
-        const { email } = req.body;
+export const checkEmailExists = async (req: Request, res: Response, next: NextFunction) => {
+    const { email } = req.body;
 
-        const userExists = await User.findOne({ email });
-        if (userExists) {
-            res.status(409).json({ message: "El Usuario ya está Registrado" });
-            return
-        }
-
-        next();
-    } catch (error) {
-        res.status(500).json({ message: "Error interno del servidor" });
+    const userExists = await User.findOne({ email });
+    if (userExists) {
+        throw new RequestConflictError("Email ya registrado")
     }
+
+    next();
 };
 
 // Checks if the user exists

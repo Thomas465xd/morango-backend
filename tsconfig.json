@@ -4,6 +4,7 @@
         "rootDir": "./src",
         "lib": ["esnext"],
         "target": "ESNext",
+        "isolatedModules": true,
         "moduleResolution": "NodeNext",
         "module": "NodeNext",
         "strict": false,

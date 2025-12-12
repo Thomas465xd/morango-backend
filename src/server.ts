@@ -5,8 +5,9 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { connectDB } from "./config/db";
 import cookieSession from "cookie-session";
-import { errorHandler, NotFoundError } from "@thomas-ticketx/common";
-import authRouter from "./routes";
+import { NotFoundError } from "./errors/not-found";
+import { errorHandler } from "./middleware/error";
+import authRouter from "./routes/authRouter"
 
 dotenv.config();
 
