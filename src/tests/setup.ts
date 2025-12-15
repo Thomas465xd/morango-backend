@@ -12,7 +12,7 @@ import Token, { TokenInterface } from "../models/Token";
 import { generateConfirmationToken, generatePasswordResetToken } from "../utils/jwt";
 
 declare global {
-	var setCookie: () => string[];
+	var setCookie: (userId?: mongoose.Types.ObjectId) => string[];
     var createUser: (confirmed: boolean, admin?: boolean) => Promise<UserInterface>; 
     var createToken: (userId: mongoose.Types.ObjectId, type: string) => Promise<TokenInterface>;
 }
@@ -52,10 +52,10 @@ afterAll(async () => {
 });
 
 //* Declare auth Helper Function
-global.setCookie = () => {
+global.setCookie = (userId?: mongoose.Types.ObjectId) => {
 	// 1. Build a JWT payload. { id, email }
 	const payload = {
-		id: new mongoose.Types.ObjectId().toHexString(),
+		id: userId ? userId : new mongoose.Types.ObjectId().toHexString(),
 		email: "test@test.com",
 	};
 
