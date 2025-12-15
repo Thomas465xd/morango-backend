@@ -8,6 +8,7 @@ jest.mock("../../../utils/jwt", () => ({
 import request from "supertest"
 import server from "../../../server"
 import { generateAdminJWT, generateConfirmationToken, generateJWT } from "../../../utils/jwt"
+import resend from "../../../config/resend";
 
 //? 📋 Input Validation Tests
 describe("Input Validation Tests", () => {
@@ -52,7 +53,7 @@ describe("login Request Handler Tests", () => {
             .expect(404)
     })
 
-    it("Returns 401 if user is not confirmed", async () => {
+    it("Returns 401 if user is not confirmed & sends confirmation email", async () => {
         await global.createUser(false);
 
         await request(server)
@@ -64,6 +65,9 @@ describe("login Request Handler Tests", () => {
             .expect(401)
 
         expect(generateConfirmationToken).toHaveBeenCalled(); 
+
+        // Expect resend to have been called one time for reset password email
+        expect(resend.emails.send).toHaveBeenCalledTimes(1); 
     })
 
     it("Returns 401 unauthorized if provided password is incorrect", async () => {

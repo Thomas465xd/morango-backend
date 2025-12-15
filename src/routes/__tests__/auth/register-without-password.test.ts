@@ -6,6 +6,7 @@ import request from "supertest"
 import server from "../../../server"
 import User from "../../../models/User";
 import { generatePasswordResetToken } from "../../../utils/jwt";
+import resend from "../../../config/resend";
 
 //? 📋 Input Validation Tests
 describe("Input Validation Tests", () => {
@@ -152,6 +153,9 @@ describe("createCheckoutAccount Request Handler Tests", () => {
             .expect(200)
 
         expect(generatePasswordResetToken).toHaveBeenCalled(); 
+        
+        // Expect resend to have been called one time for reset password email
+        expect(resend.emails.send).toHaveBeenCalledTimes(1); 
     })
 
     it("Returns a 201 if user is registered correctly with matching properties", async () => { 
@@ -191,5 +195,8 @@ describe("createCheckoutAccount Request Handler Tests", () => {
         expect(user.address.street).toBe("Manor 1234")
         expect(user.address.reference).toBe("")
         expect(user.address.zipCode).toBe("")
+
+        // Expect resend to have been called one time for reset password email
+        expect(resend.emails.send).toHaveBeenCalledTimes(1); 
     })
 })

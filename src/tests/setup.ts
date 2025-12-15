@@ -1,11 +1,10 @@
 // Set environment variables BEFORE importing anything
 process.env.JWT_SECRET = "testsecret";
 process.env.DATABASE_URL = "mongodb://tickets-mongo-srv:27017/tickets";
+process.env.RESEND_API_KEY = "mock_resend_key"
 
 import { MongoMemoryServer } from "mongodb-memory-server";
 import mongoose from "mongoose";
-import request from "supertest";
-import server from "../server";
 import jwt from "jsonwebtoken";
 import User, { Roles, UserInterface } from "../models/User";
 import Token, { TokenInterface } from "../models/Token";
@@ -21,6 +20,9 @@ declare global {
 jest.mock("../config/db", () => ({
 	connectDB: jest.fn(),
 }));
+
+// Own Custom Implementation by Mocking the resend function
+jest.mock("../config/resend");
 
 let mongo: MongoMemoryServer;
 

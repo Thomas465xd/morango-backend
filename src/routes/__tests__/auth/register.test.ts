@@ -1,5 +1,6 @@
 import request from "supertest"
 import server from "../../../server"
+import resend from "../../../config/resend"
 
 //? 📋 Input Validation Tests
 describe("Input Validation Tests", () => {
@@ -78,8 +79,8 @@ describe("Input Validation Tests", () => {
 })
 
 describe("AuthController Request Handler Tests", () => {
-    it("Returns 201 for successful user register", async () => {
-        return request(server)
+    it("Returns 201 for successful user registration and confirmation email", async () => {
+        await request(server)
             .post("/api/auth/register")
             .send({
                 name: "Thomas", 
@@ -89,6 +90,9 @@ describe("AuthController Request Handler Tests", () => {
                 confirmPassword: "password"
             })
             .expect(201)
+
+        // Expect resend to have been called one time for confirmation email
+        expect(resend.emails.send).toHaveBeenCalledTimes(1); 
     })
 
     it("Returns 409 for registering with an already registered email", async () => {

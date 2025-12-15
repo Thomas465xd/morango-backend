@@ -1,5 +1,6 @@
 import request from "supertest"
 import server from "../../../server"
+import resend from "../../../config/resend"
 
 //? 📋 Input Validation Tests
 describe("Input Validation Tests", () => {
@@ -51,7 +52,8 @@ describe("requestConfirmationEmail Request Handler Tests", () => {
             })
             .expect(200)
 
-        // TODO: Check if email was triggered correctly
-        // expect(AuthEmails.ConfirmationEmail).toHaveBeenCalled()
+        // Check if email was triggered correctly
+        // Expect resend to have been called one time for reset password email
+        expect(resend.emails.send).toHaveBeenCalledTimes(1); 
     })
 })

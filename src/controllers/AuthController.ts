@@ -6,6 +6,7 @@ import { RequestConflictError } from "../errors/conflict-error";
 import { NotFoundError } from "../errors/not-found";
 import { NotAuthorizedError } from "../errors/not-authorized";
 import { comparePassword } from "../utils/auth";
+import { AuthEmails } from "../emails/auth";
 
 
 export class AuthController {
@@ -31,12 +32,13 @@ export class AuthController {
 
         token.userId = user.id;
         token.token = generateConfirmationToken({ id: user.id });
-
-        //TODO Send the Confirmation Email to the user
-
+        
         // Save the user in the DB
         await user.save()
         await token.save()
+
+        //* Send Confirmation Email
+        await AuthEmails.ConfirmAccount.send(user, token.token)
 
         res.status(201).json({ 
             message: "Usuario Registrado Exitosamente, hemos enviado un Email de Verificación a tu Correo.", 
@@ -77,10 +79,10 @@ export class AuthController {
                     userId: userExists.id,
                     token,
                     type: "password_reset"
-                });
+                }); 
 
-                // TODO: Resend set password email
-                // await sendSetPasswordEmail(email, name, token);
+                //* Resend set password email
+                await AuthEmails.ResetPassword.send(userExists, token)
 
                 res.status(200).json({
                     message: "Te hemos reenviado el correo para configurar tu contraseña."
@@ -116,8 +118,8 @@ export class AuthController {
             type: "password_reset"
         })
 
-        //TODO Send the Set Password Email to the user
-
+        //* Reset password email
+        await AuthEmails.ResetPassword.send(user, token)
 
         res.status(201).json({ 
             message: "Usuario Registrado Exitosamente. Hemos enviado un correo para configurar tu contraseña.", 
@@ -163,11 +165,12 @@ export class AuthController {
 
             token.token = generateConfirmationToken({ id: user.id }); 
             token.userId = user.id 
-
-            // TODO Send Confirmation Email
-
+            
             // Save token
             await token.save(); 
+
+            //* Send Confirmation Email
+            await AuthEmails.ConfirmAccount.send(user, token.token)
 
             throw new NotAuthorizedError("Cuenta no confirmada, hemos enviado un email de verficación")
         }
@@ -227,12 +230,8 @@ export class AuthController {
             type: "email_verification"
         })
 
-        // TODO: Resend confirmation email to the user
-        // ConfirmEmail.sendConfirmationEmailToUser({
-        //     email: user.email,
-        //     name: user.name,
-        //     token: confirmationToken.token
-        // })
+        //* Resend confirmation email to the user
+        await AuthEmails.ConfirmAccount.send(user, confirmationToken.token)
 
         res.status(200).json({
             message: "Email de verificación enviado exitosamente.",
@@ -256,11 +255,12 @@ export class AuthController {
 
             token.token = generateConfirmationToken({ id: user.id }); 
             token.userId = user.id 
-
-            // TODO Send Confirmation Email
-
+            
             // Save token
             await token.save(); 
+
+            //* Send Confirmation Email
+            await AuthEmails.ConfirmAccount.send(user, token.token)
 
             throw new NotAuthorizedError("Cuenta no confirmada, hemos enviado un email de verficación")
         }
@@ -277,12 +277,8 @@ export class AuthController {
             type: "password_reset"
         })
 
-        // TODO: Resend confirmation email to the user
-        // ConfirmEmail.sendConfirmationEmailToUser({
-        //     email: user.email,
-        //     name: user.name,
-        //     token: confirmationToken.token
-        // })
+        //* Resend reset password email to the user
+        await AuthEmails.ResetPassword.send(user, passwordResetToken.token)
 
         res.status(200).json({
             message: "Hemos enviado las instrucciones a tu email.",
