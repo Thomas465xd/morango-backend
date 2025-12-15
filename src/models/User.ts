@@ -62,7 +62,10 @@ export interface UserAttrs {
     name: string; 
     surname: string; 
     email: string; 
-    password: string;
+    password?: string;
+    
+    phone?: string; 
+    address?: Address
 }
 
 // Model interface = adds a build method that uses UserAttrs
@@ -175,11 +178,28 @@ userSchema.index({ role: 1 });
 // Hashing Passwords by using the .pre middleware function implemented in mongoose
 // Any time an attempt to save a document to the db is made, the following code will execute
 userSchema.pre("save", async function(done) {
-    // Only hash the password if the password field has been modified
-    if(this.isModified("password")) {
-        const hashed = await hashPassword(this.get("password") as string);
-        this.set("password", hashed);
+    // // Only hash the password if the password field has been modified
+    // if(this.isModified("password")) {
+    //     const hashed = await hashPassword(this.get("password") as string);
+    //     this.set("password", hashed);
+    // }
+
+    // done();
+
+    if (!this.isModified("password")) {
+        return done();
     }
+
+    const password = this.get("password");
+
+    // 👇 CRITICAL GUARD
+    if (!password) {
+        // allow null / undefined passwords (checkout flow)
+        return done();
+    }
+
+    const hashed = await hashPassword(password as string);
+    this.set("password", hashed);
 
     done();
 })
