@@ -9,10 +9,29 @@ import jwt from "jsonwebtoken";
 import User, { Roles, UserInterface } from "../models/User";
 import Token, { TokenInterface } from "../models/Token";
 import { generateConfirmationToken, generatePasswordResetToken } from "../utils/jwt";
+import Product, { ProductInterface, ProductTypes } from "../models/Product";
+
+type CreateProductArgs = {
+    category?: string;
+    isActive?: boolean;
+    name?: string;
+    description?: string;
+    basePrice?: number;
+    productType?: ProductTypes;
+    stock?: number;
+    tags?: string[];
+    discount?: {
+        percentage: number 
+        isActive: boolean 
+        startDate?: Date
+        endDate?: Date
+    }
+};
 
 declare global {
 	var setCookie: (userId?: mongoose.Types.ObjectId) => string[];
-    var createUser: (confirmed: boolean, admin?: boolean) => Promise<UserInterface>; 
+    var createUser: (confirmed: boolean, admin?: boolean) => Promise<UserInterface>;
+    var createProduct: (args?: CreateProductArgs) => Promise<ProductInterface>
     var createToken: (userId: mongoose.Types.ObjectId, type: string) => Promise<TokenInterface>;
 }
 
@@ -117,3 +136,50 @@ global.createToken = async (userId : mongoose.Types.ObjectId, type: string) => {
 
     return token; 
 }
+
+//* Declare Create Product Helper Function
+global.createProduct = async ({
+    category = "Collares", 
+    isActive = true, 
+    name = "Collar Test", 
+    description = "Descripción Test", 
+    basePrice = 20000, 
+    productType = ProductTypes.Necklace, 
+    stock = 8, 
+    tags = ["rojo", "plata", "elegante"],
+    discount = {
+        percentage: 0, 
+        isActive: false
+    }
+} : CreateProductArgs = {}) => {
+    const images = [
+        "https://cloudinary.com/images-1", 
+        "https://cloudinary.com/images-2", 
+        "https://cloudinary.com/images-3", 
+    ]
+
+    const product = Product.build({
+        name, 
+        description, 
+        basePrice, 
+        productType, 
+        images, 
+        stock, 
+        category, 
+        tags, 
+        isActive, 
+        discount,
+        attributes: {
+            length: "15cm", 
+            material: "Oro",
+            claspType: "De Langosta" , 
+            chainType: "Tipo |Barbada"
+        }
+    })
+
+    await product.save(); 
+
+    return product; 
+} 
+
+//TODO: Declare Create Order Helper Function

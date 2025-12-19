@@ -54,7 +54,7 @@ export interface ProductInterface extends Document {
     reserved: number; // Stock locked by pending orders 
     category: string; 
     tags: string[]; 
-    isActive: boolean; 
+    isActive: boolean;  
 
     discount: {
         percentage: number // number from 0 to 100
@@ -85,6 +85,14 @@ export interface ProductAttrs {
     category: string; 
     tags: string[]; 
     isActive: boolean; 
+
+    discount?: {
+        percentage: number // number from 0 to 100
+        isActive: boolean
+        startDate?: Date 
+        endDate?: Date 
+    }
+    attributes?: ProductAttributes; 
 }
 
 // Model interface = adds a build method that uses ProductAttrs
@@ -191,17 +199,29 @@ toJSON(productSchema);
 // directly from the B-Tree without scanning the entire collection.
 productSchema.index({ tags: 1 });
 
+// Price index
+productSchema.index({ basePrice: 1 })
+
 //^ Compound Indexes
+// This compound index covers default listing, default sorting, pagination & countDocuments
+productSchema.index({ isActive: 1, createdAt: -1 });
+
 // This compound index helps queries that filter products by both "productType"
 // and their active state. For example, an API endpoint that loads all active
 // products of a specific type will avoid scanning non-matching combinations
 // and return sorted/filtered results efficiently.
-productSchema.index({ productType: 1, isActive: 1 });
+productSchema.index({ isActive: 1, productType: 1 });
 
 // This index improves queries that retrieve active products for a given category.
 // It becomes useful when building category pages or filtering items by category
 // while enforcing active availability in the same query.
-productSchema.index({ category: 1, isActive: 1 });
+productSchema.index({ isActive: 1, category: 1  });
+
+// This index improved queries that retrieve products with range queries.
+productSchema.index({ isActive: 1, category: 1, basePrice: 1 });
+
+// This index improves queries that sort products by name. 
+productSchema.index({ isActive: 1, category: 1, name: 1 });
 
 // This compound index optimizes queries that filter by a discount's active state
 // and then apply a range query on "endDate". This becomes crucial when determining
@@ -209,12 +229,33 @@ productSchema.index({ category: 1, isActive: 1 });
 // the B-Tree stores discount.isActive first and then sorts by endDate efficiently.
 productSchema.index({ 'discount.isActive': 1, 'discount.endDate': 1 });
 
-//TODO Text Index
+//& Text Index
 // This index enables full-text search over the "name" and "description" fields.
 // It is used when implementing keyword search functionality, allowing users to
 // find products matching natural-language queries such as "running shoes" or
 // "wireless headphones" without needing to run slow regex scans.
 productSchema.index({ name: 'text', description: 'text' }); // For text search
+
+// Enforce isActive correctness at write time, this will make sure that if isActive exists, dates are correct
+productSchema.pre("save", function (this: ProductInterface, next) {
+    if (!this.discount) return next();
+
+    const { isActive, startDate, endDate } = this.discount;
+    const now = new Date();
+
+    // If active, dates must make sense
+    if (isActive) {
+        if (startDate && endDate && startDate > endDate) {
+            return next(new Error("discount.startDate cannot be after endDate"));
+        }
+
+        if (endDate && endDate < now) {
+            this.discount.isActive = false;
+        }
+    }
+
+    next();
+});
 
 // Virtual Field for Final Price
 productSchema.virtual('finalPrice').get(function(this: ProductInterface) {
