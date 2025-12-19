@@ -64,7 +64,7 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
 }
 
 //! Validates for AdminToken
-export const authorizeAdmin = (req: Request, res: Response, next: NextFunction) => {
+export const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
     if (!req.user || req.user.role !== Roles.Admin) {
         throw new ForbiddenError("Acceso denegado. Se requieren permisos de administrador.")
     }
