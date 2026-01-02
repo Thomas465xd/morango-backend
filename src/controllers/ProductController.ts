@@ -3,6 +3,7 @@ import Product from "../models/Product";
 import { NotFoundError } from "../errors/not-found";
 import { AllowedProductAttributes } from "../types/validators";
 import { enrichProducts } from "../utils/product";
+import { formatLean } from "../utils/json";
 
 
 export class ProductController {
@@ -196,7 +197,7 @@ export class ProductController {
             .lean(); 
 
         res.status(200).json({
-            products, 
+            products: products.map(formatLean), 
             totalProducts, 
             totalPages, 
             perPage,

@@ -157,8 +157,7 @@ router.patch("/profile",
         .trim(),
     body("email")
         .optional()
-        .isEmail().withMessage("El email no es válido")
-        .normalizeEmail(),
+        .isEmail().withMessage("El email no es válido"),
     body("phone")
         .optional()
         .matches(/^(\+56\s?9\d{8}|9\d{8})$/)

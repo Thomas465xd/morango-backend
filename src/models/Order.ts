@@ -3,7 +3,7 @@ import mongoose, { Schema, Document, Model, Types } from "mongoose";
 import { Regions } from "./User";
 
 export enum OrderStatus {
-    PendingPayment = "Esperando Pago",
+    Pending = "Esperando Pago",
     Processing = "Procesando", 
     Sent = "En Transito", 
     Delivered = "Entregado", 
@@ -12,7 +12,7 @@ export enum OrderStatus {
 }
 
 interface Customer {
-    userId: mongoose.Types.ObjectId // Reference to User model 
+    userId?: mongoose.Types.ObjectId // Reference to User model 
     email: string 
     name: string
     surname: string 
@@ -30,7 +30,7 @@ interface Address {
     zipCode: string 
 }
 
-interface Item {
+export interface Item {
     productId: mongoose.Types.ObjectId // Reference to Product Model 
     productName: string 
     productImage: string 
@@ -45,9 +45,9 @@ interface Item {
 // An interface that describes the properties that a Order Document has
 export interface OrderInterface extends Document {
     // Base order info
-    trackingNumber: string // Given by the courier, can be set later by the admin
+    trackingNumber: string // Public tracking number
     customer: Customer 
-    shippingAdress: Address 
+    shippingAddress: Address 
     status: OrderStatus;
     items: Item[]
 
@@ -79,15 +79,14 @@ export interface OrderInterface extends Document {
 export interface OrderAttrs {
     trackingNumber: string
     customer: Customer 
-    shippingAdress: Address 
-    status: OrderStatus
+    shippingAddress: Address 
     items: Item[]
-    subototal: number 
+    subtotal: number 
     shipping: number 
-    shippingMethod: string 
+    shippingMethod?: string
     total: number 
-    paymentId: Types.ObjectId
-    stockReservedAt: Date
+    paymentId?: Types.ObjectId // Needs to be set after Payment Creation
+    stockReservedAt?: Date
     stockReservationExpiresAt: Date 
     saveData: boolean, 
 }
@@ -104,7 +103,8 @@ const orderSchema : Schema = new Schema(
         customer: {
             userId: {
                 type: Schema.Types.ObjectId, 
-                required: true, 
+                required: false, 
+                default: null, 
                 ref: "User", 
             },
             email: {
@@ -210,7 +210,7 @@ const orderSchema : Schema = new Schema(
         status: {
             type: String, 
             enum: OrderStatus, 
-            default: OrderStatus.PendingPayment, 
+            default: OrderStatus.Pending, 
         }, 
         trackingNumber: {
             type: String, 
@@ -230,7 +230,8 @@ const orderSchema : Schema = new Schema(
         }, 
         shippingMethod: {
             type: String, 
-            required: true, 
+            required: true,
+            default: "Por Definir...",  
             trim: true, 
         }, 
         total: {
@@ -284,8 +285,8 @@ toJSON(orderSchema);
 
 //^ Compound Indexes
 orderSchema.index({ 'customer.email': 1, createdAt: -1 });
-orderSchema.index({ 'customer.userId': 1, createdAt: -1 });
-orderSchema.index({ status: 1, stockReservationExpiresAt: 1 }); // Critical for cleanup job
+orderSchema.index({ 'customer.userId': 1, createdAt: -1 }); // Critical for searching current auth user orders
+orderSchema.index({ status: 1, createdAt: -1, stockReservationExpiresAt: 1 }); // Critical for cleanup job & admin search
 
 //* Single Field Indexes
 orderSchema.index({ trackingNumber: 1 }); // For order tracking

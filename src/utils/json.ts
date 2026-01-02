@@ -1,4 +1,4 @@
-import { Schema, Document } from "mongoose";
+import { Schema } from "mongoose";
 
 // Map virtual USER model attributes to return in responses
 export default function toJSON(model: Schema, ...fields: string[]) {
@@ -7,10 +7,22 @@ export default function toJSON(model: Schema, ...fields: string[]) {
 			returnedObject.id = returnedObject._id.toString();
 			delete returnedObject._id;
 			delete returnedObject.__v;
-			delete returnedObject.createdAt;
-			delete returnedObject.updatedAt;
+			// delete returnedObject.createdAt;
+			// delete returnedObject.updatedAt;
 
 			fields.forEach((field) => delete returnedObject[field]);
 		},
 	});
+}
+
+// When .lean() is used...
+export function formatLean<T extends Record<string, any>>(obj: T) {
+    if (!obj) return obj;
+
+    const { _id, __v, ...rest } = obj;
+
+    return {
+        id: _id?.toString?.() ?? _id,
+        ...rest,
+    };
 }
