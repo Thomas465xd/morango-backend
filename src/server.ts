@@ -9,6 +9,7 @@ import { NotFoundError } from "./errors/not-found";
 import { errorHandler } from "./middleware/error";
 import authRouter from "./routes/authRouter"
 import productRouter from "./routes/productRouter"
+import orderRouter from "./routes/orderRouter"
 
 dotenv.config();
 
@@ -51,6 +52,7 @@ app.use(cors());
 //? Routes
 app.use("/api/auth", authRouter)
 app.use("/api/products", productRouter)
+app.use("/api/orders", orderRouter)
 
 //? Trigger not-found error | before Error Handler & after router declarations
 app.all("/{*splat}/" , async (req, res, next) => {
