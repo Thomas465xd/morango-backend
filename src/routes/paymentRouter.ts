@@ -9,7 +9,7 @@ const router = Router();
 //& 🛠️ Core Payment Flow 🛠️ &//
 
 //! CRITICAL
-//^ POST - Create Preference
+//^ 1.- POST - Create Preference
 // Generates MP preference with order details and returns preferenceId for Bricks
 // Returns init_point URL to redirect user
 // Creates initial Payment record/document in DB
@@ -22,7 +22,7 @@ router.post("/create-preference",
     PaymentController.createPreference
 )
 
-//^ POST - Mercado Pago webhook
+//^ 2.- POST - Mercado Pago webhook
 // Receives payment notifications from MP, validates MP signature, 
 // updates payment status, updates order status to processing, converts reserved stock to sold stock, 
 // sends processing order email
@@ -37,7 +37,7 @@ router.post("/webhook",
 
 //** ✨ FRONTEND UX Endpoints ✨ **/
 
-//* GET - Payment success redirect page
+//* 3.- GET - Payment success redirect page
 // user redirected here after successful payment
 // shows order confirmation
 // displays order number and details
@@ -47,7 +47,7 @@ router.get("/success",
     PaymentController.redirectSuccess
 )
 
-//* GET - Payment failure redirect page
+//* 4.- GET - Payment failure redirect page
 // User redirected here if payment fails
 // shows error message
 // option to retry payment
@@ -57,7 +57,7 @@ router.get("/failure",
     PaymentController.redirectFailure
 )
 
-//* GET - Payment Pending redirect page
+//* 5.- GET - Payment Pending redirect page
 // User redirected here for pending payments, shows pending status
 // instruction for what to do next
 router.get("/pending", 
@@ -68,7 +68,7 @@ router.get("/pending",
 
 //~ 🚚 PAYMENT STATUS & MANAGEMENT 🚚 ~//
 
-//* GET - get payment status for order
+//* 6.- GET - get payment status for order
 // Check current payment status, used for polling on frontend, 
 // returns payment info and order status
 router.get("/order/:orderId/status", 
@@ -81,7 +81,7 @@ router.get("/order/:orderId/status",
     PaymentController.getOrderPaymentStatus
 )
 
-//^ POST - Retry failed payment
+//^ 7.- POST - Retry failed payment
 // Create new MP preference for same order
 // Only allowed if order not expired
 // Updates payment record with new preference
@@ -94,7 +94,7 @@ router.get("/order/:orderId/retry",
     PaymentController.retryPayment
 )
 
-//* GET - Get payment details
+//* 8.- GET - Get payment details
 // Get detailed payment information
 // Includes MP transaction data
 // Admin and order owner can access
@@ -110,7 +110,7 @@ router.get("/:paymentId",
 
 //! 🔒 ADMIN PAYMENT MANAGEMENT 🔒 !// 
 
-//* GET - List all payments (admin)
+//* 9.- GET - List all payments (admin)
 // Pagination support
 // Filter by status, date range
 // Search by order number or email
@@ -121,7 +121,7 @@ router.get("/admin",
     PaymentController.getPaymentsAdmin
 )
 
-//* GET - Get payment details (admin)
+//* 10.- GET - Get payment details (admin)
 // Full payment information
 // MP transaction details
 // Associated order info
@@ -135,12 +135,12 @@ router.get("/admin/:paymentId",
     PaymentController.getPaymentByIdAdmin
 )
 
-//^ POST - Process refund (admin)
+//^ 11.- POST - Process refund (admin)
 // Initiate refund through MP API
 // Update payment status
 // Update order status
 // Return stock to inventory
-router.post("/admin/:paymentId", 
+router.post("/admin/:paymentId/refund", 
     currentUser, 
     requireAdmin,
     param("paymentId")
