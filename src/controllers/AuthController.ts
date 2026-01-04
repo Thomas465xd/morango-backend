@@ -7,6 +7,7 @@ import { NotFoundError } from "../errors/not-found";
 import { NotAuthorizedError } from "../errors/not-authorized";
 import { comparePassword } from "../utils/auth";
 import { AuthEmails } from "../emails/auth";
+import Order from "../models/Order";
 
 
 export class AuthController {
@@ -26,6 +27,21 @@ export class AuthController {
             email, 
             password
         }); 
+
+        //! Link all previous guest orders to this user
+        await Order.updateMany(
+            { 
+                'customer.email': email,
+                'customer.isGuest': true,
+                'customer.userId': null
+            },
+            { 
+                $set: { 
+                    'customer.userId': user._id,
+                    'customer.isGuest': false
+                } 
+            }
+        );
 
         // Generate a verification token
         const token = new Token();
