@@ -3,13 +3,15 @@ process.env.JWT_SECRET = "testsecret";
 process.env.DATABASE_URL = "mongodb://tickets-mongo-srv:27017/tickets";
 process.env.RESEND_API_KEY = "mock_resend_key"
 
-import { MongoMemoryServer } from "mongodb-memory-server";
+import { MongoMemoryReplSet } from "mongodb-memory-server";
 import mongoose from "mongoose";
 import jwt from "jsonwebtoken";
-import User, { Roles, UserInterface } from "../models/User";
+import User, { Regions, Roles, UserInterface } from "../models/User";
 import Token, { TokenInterface } from "../models/Token";
 import { generateConfirmationToken, generatePasswordResetToken } from "../utils/jwt";
 import Product, { ProductInterface, ProductTypes } from "../models/Product";
+import Order, { OrderInterface, OrderStatus } from "../models/Order";
+import { generateOrderNumber } from "../utils/order";
 
 type CreateProductArgs = {
     category?: string;
@@ -30,9 +32,10 @@ type CreateProductArgs = {
 
 declare global {
 	var setCookie: (userId?: mongoose.Types.ObjectId) => string[];
-    var createUser: (confirmed: boolean, admin?: boolean) => Promise<UserInterface>;
-    var createProduct: (args?: CreateProductArgs) => Promise<ProductInterface>
+    var createUser: (confirmed: boolean, admin?: boolean, email?: string) => Promise<UserInterface>;
     var createToken: (userId: mongoose.Types.ObjectId, type: string) => Promise<TokenInterface>;
+    var createProduct: (args?: CreateProductArgs) => Promise<ProductInterface>
+    var createOrder: (user?: UserInterface, status?: OrderStatus, createdAt?: Date) => Promise<{order: OrderInterface, firstProduct: ProductInterface, secondProduct: ProductInterface}>
 }
 
 // Mock the connectDB function before importing server
@@ -43,13 +46,20 @@ jest.mock("../config/db", () => ({
 // Own Custom Implementation by Mocking the resend function
 jest.mock("../config/resend");
 
-let mongo: MongoMemoryServer;
+// ReplSet allows transactions in tests
+let mongo: MongoMemoryReplSet;
 
 beforeAll(async () => {
-	mongo = await MongoMemoryServer.create();
-	const mongoUri = mongo.getUri();
-
-	await mongoose.connect(mongoUri);
+    mongo = await MongoMemoryReplSet.create({
+        replSet: {
+            count: 1,                 // single-node replica set
+            storageEngine: "wiredTiger",
+        },
+    });
+    
+    const mongoUri = mongo.getUri();
+    
+    await mongoose.connect(mongoUri);
 });
 
 beforeEach(async () => {
@@ -65,12 +75,29 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
-	if (mongo) {
-		await mongo.stop();
-	}
+    // Temporarily silence EVERYTHING | This is for some annoying unknown warning console log
+    const noop = () => {};
+    const originalWarn = console.warn;
+    const originalError = console.error;
 
-	await mongoose.connection.close();
+    console.warn = noop;
+    console.error = noop;
+
+    try {
+        if (mongoose.connection.readyState !== 0) {
+            await mongoose.connection.close();
+        }
+
+        if (mongo) {
+            await mongo.stop();
+        }
+    } finally {
+        // Restore console
+        console.warn = originalWarn;
+        console.error = originalError;
+    }
 });
+
 
 //* Declare auth Helper Function
 global.setCookie = (userId?: mongoose.Types.ObjectId) => {
@@ -97,16 +124,16 @@ global.setCookie = (userId?: mongoose.Types.ObjectId) => {
 };
 
 //* Declare Create User function
-global.createUser = async (confirmed: boolean, admin?: boolean) => {
+global.createUser = async (confirmed: boolean, admin?: boolean, email?: string) => {
     const name = "Thomas"
     const surname = "Schrödinger"
-    const email = "test@test.com"
+    const uniqueEmail = email ? email : "test@test.com"
     const password = "password"
 
     const user = User.build({
         name, 
         surname, 
-        email, 
+        email: uniqueEmail, 
         password, 
     })
 
@@ -182,4 +209,131 @@ global.createProduct = async ({
     return product; 
 } 
 
-//TODO: Declare Create Order Helper Function
+//* Declare Create Order Helper Function
+global.createOrder = async (user?: UserInterface, status?: OrderStatus, createdAt?: Date) => {
+    const firstProduct = await global.createProduct(); 
+    const secondProduct = await global.createProduct(); 
+
+    const trackingNumber = await generateOrderNumber();
+
+    // Create order with 20-minute expiration
+    const expirationTime = new Date(Date.now() + 20 * 60000); // 20 minutes
+
+    const shipping = 5990
+    const subtotal = firstProduct.finalPrice + secondProduct.finalPrice
+    const total = shipping + subtotal
+
+    const order = await Order.build({
+        trackingNumber, 
+        customer: {
+            userId: user ? user.id : null,
+            email: user ? user.email : "test@test.com", 
+            name: user ? user.name : "John", 
+            surname: user ? user.surname : "Doe", 
+            phone: user ? user.phone : "912345678", 
+            isGuest: !user  
+        }, 
+        shippingAddress: {
+            country: "Chile", 
+            region: Regions["Metropolitana de Santiago"], 
+            city: "Santiago",
+            cityArea: "Vitacura", 
+            street: "John Doe 4312", 
+            reference: "Torre B condominio Lagos", 
+            zipCode: ""
+        }, 
+        items: [{
+            productId: firstProduct.id, 
+            productName: firstProduct.name,
+            productImage: firstProduct.images[0],
+            basePrice: firstProduct.basePrice,
+            discount: firstProduct.discount.percentage,
+            finalPrice: firstProduct.discount.percentage !== 0 ? Math.round(firstProduct.basePrice * (1 - firstProduct.discount.percentage / 100)) : firstProduct.basePrice,
+            quantity: 1,
+            itemTotal: firstProduct.discount.percentage !== 0 ? Math.round(firstProduct.basePrice * (1 - firstProduct.discount.percentage / 100)) : firstProduct.basePrice * 1
+        }, {
+            productId: secondProduct.id, 
+            productName: secondProduct.name,
+            productImage: secondProduct.images[0],
+            basePrice: secondProduct.basePrice,
+            discount: secondProduct.discount.percentage,
+            finalPrice: secondProduct.discount.percentage !== 0 ? Math.round(secondProduct.basePrice * (1 - secondProduct.discount.percentage / 100)) : secondProduct.basePrice,
+            quantity: 1,
+            itemTotal: secondProduct.discount.percentage !== 0 ? Math.round(secondProduct.basePrice * (1 - secondProduct.discount.percentage / 100)) : firstProduct.basePrice * 1
+        }], 
+        subtotal, 
+        shipping , 
+        total, 
+        saveData: !user,
+        stockReservedAt: new Date(), 
+        stockReservationExpiresAt: expirationTime
+    })
+
+    if(status) {
+        order.status = status
+    }
+
+    if(createdAt) {
+        order.createdAt = createdAt
+        order.updatedAt = createdAt
+    }
+
+    await order.save(); 
+
+    //! Reserve stock for each product
+    await Product.updateOne(
+        { _id: firstProduct.id },
+        { $inc: { reserved: 1 } }
+    );
+    
+    await Product.updateOne(
+        { _id: secondProduct.id },
+        { $inc: { reserved: 1 } }
+    );
+
+    // If order status is Processing, Sent or Delivered, then release stock and decrease real product stock
+    if(order.status !== OrderStatus.Pending && order.status !== OrderStatus.Cancelled && order.status !== OrderStatus.Expired) {
+        await Product.updateOne(
+            { _id: firstProduct.id },
+            {
+                $inc: {
+                    stock: -1,
+                    reserved: -1
+                }
+            }
+        );
+
+        await Product.updateOne(
+            { _id: secondProduct.id },
+            {
+                $inc: {
+                    stock: -1,
+                    reserved: -1
+                }
+            }
+        );
+    }
+
+    // If order status is Expired or Cancelled then just release reserved stock without updating real price
+    if(order.status === OrderStatus.Expired || order.status === OrderStatus.Cancelled) {
+        await Product.updateOne(
+            { _id: firstProduct.id },
+            {
+                $inc: {
+                    reserved: -1
+                }
+            }
+        );
+
+        await Product.updateOne(
+            { _id: secondProduct.id },
+            {
+                $inc: {
+                    reserved: -1
+                }
+            }
+        );
+    }
+
+    return { firstProduct, secondProduct, order }; 
+} 
