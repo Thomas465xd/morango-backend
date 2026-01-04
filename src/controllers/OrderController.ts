@@ -284,125 +284,151 @@ export class OrderController {
         // Extrack productId's from cart items 
         const productIds = items.map(item => item.productId); 
 
-        // Fetch only active products matching provided id's
-        const products = await Product.find({
-            _id: { $in: productIds }, 
-            isActive: true 
-        })
+        //& Start transaction to ensure all db operations were successfully processed
+        const session = await mongoose.startSession(); 
+        session.startTransaction(); 
 
-        if (products.length !== items.length) {
-            throw new RequestConflictError("Algunos productos no estan disponibles")
-        }
-
-        //! Validate stock availability for each product
-        const stockValidation = items.map(cartItem => {
-            const product = products.find(p => p._id.toString() === cartItem.productId);
-
-            // Calculate availableStock considering reserved units
-            const availableStock = product.stock - product.reserved;
+        try {
+            // Fetch only active products matching provided id's
+            const products = await Product.find({
+                _id: { $in: productIds }, 
+                isActive: true 
+            }, null, { session })
+    
+            if (products.length !== items.length) {
+                throw new RequestConflictError("Algunos productos no estan disponibles")
+            }
+    
+            //! Validate stock availability for each product
+            const stockValidation = items.map(cartItem => {
+                const product = products.find(p => p._id.toString() === cartItem.productId);
+    
+                // Calculate availableStock considering reserved units
+                const availableStock = product.stock - product.reserved;
+                
+                if (availableStock < cartItem.quantity) {
+                    return {
+                        productId: product._id,
+                        productName: product.name,
+                        requested: cartItem.quantity,
+                        available: availableStock,
+                        isAvailable: false
+                    };
+                }
+                
+                return { productId: product._id, isAvailable: true };
+            });
+    
+            const unavailableItems = stockValidation.filter(item => !item.isAvailable);
             
-            if (availableStock < cartItem.quantity) {
+            if (unavailableItems.length > 0) {
+                throw new RequestConflictError("Stock insuficiente para algunos productos")
+            }
+        
+            //! Build normalized order items array
+    
+            // Create order items using current product data to prevent client side manipulation
+            const orderItems = items.map(cartItem => {
+                const product = products.find(p => p._id.toString() === cartItem.productId);
+                const isDiscountValid = product.isDiscountValid();
+                const finalPrice = isDiscountValid 
+                    ? Math.round(product.basePrice * (1 - product.discount.percentage / 100))
+                    : product.basePrice;
+                
                 return {
                     productId: product._id,
                     productName: product.name,
-                    requested: cartItem.quantity,
-                    available: availableStock,
-                    isAvailable: false
+                    productImage: product.images[0],
+                    basePrice: product.basePrice,
+                    discount: isDiscountValid ? product.discount.percentage : 0,
+                    finalPrice,
+                    quantity: cartItem.quantity,
+                    itemTotal: finalPrice * cartItem.quantity
                 };
-            }
-            
-            return { productId: product._id, isAvailable: true };
-        });
-
-        const unavailableItems = stockValidation.filter(item => !item.isAvailable);
-        
-        if (unavailableItems.length > 0) {
-            throw new RequestConflictError("Stock insuficiente para algunos productos")
-        }
+            });
     
-        //! Build normalized order items array
-
-        // Create order items using current product data to prevent client side manipulation
-        const orderItems = items.map(cartItem => {
-            const product = products.find(p => p._id.toString() === cartItem.productId);
-            const isDiscountValid = product.isDiscountValid();
-            const finalPrice = isDiscountValid 
-                ? Math.round(product.basePrice * (1 - product.discount.percentage / 100))
-                : product.basePrice;
+            // Calculate totals
+            const subtotal = orderItems.reduce((sum, item) => sum + item.itemTotal, 0);
+            const total = subtotal + shipping;
+    
+            // Generate unique order number
+            const trackingNumber = await generateOrderNumber(); 
+    
+            // Create order with 20-minute expiration
+            const expirationTime = new Date(Date.now() + 20 * 60000); // 20 minutes
+    
+            const order = await Order.build({
+                trackingNumber,
+                customer: {
+                    userId: userId || null,
+                    email: customer.email,
+                    name: customer.name,
+                    surname: customer.surname,
+                    phone: customer.phone,
+                    isGuest: !userId
+                },
+                shippingAddress,
+                items: orderItems,
+                subtotal,
+                shipping,
+                total,
+                saveData: saveData && !userId, // Only for guests
+                stockReservedAt: new Date(),
+                stockReservationExpiresAt: expirationTime
+            });
+    
             
-            return {
-                productId: product._id,
-                productName: product.name,
-                productImage: product.images[0],
-                basePrice: product.basePrice,
-                discount: isDiscountValid ? product.discount.percentage : 0,
-                finalPrice,
-                quantity: cartItem.quantity,
-                itemTotal: finalPrice * cartItem.quantity
-            };
-        });
+            // TODO: Initialize payment flow 
+            // // Create Mercado Pago preference
+            // const mpPreference = await createMercadoPagoPreference(order);
+            
+            // // Create payment record
+            // const payment = await Payment.create({
+            //     orderId: order._id,
+            //     provider: 'mercadopago',
+            //     mpPreferenceId: mpPreference.id,
+            //     amount: total,
+            //     currency: 'CLP',
+            //     status: PaymentStatus.Pending
+            // });
+            
+            // // Link payment to order
+            // order.paymentId = payment._id;
+            await order.save({ session });
+    
+            //! Atomically reserve stock for each product
+            for (const item of orderItems) {
+                const result = await Product.updateOne(
+                    {
+                        _id: item.productId,
+                        $expr: {
+                            $gte: [
+                                { $subtract: ["$stock", "$reserved"] },
+                                item.quantity
+                            ]
+                        }
+                    },
+                    { $inc: { reserved: item.quantity } },
+                    { session }
+                );
 
-        // Calculate totals
-        const subtotal = orderItems.reduce((sum, item) => sum + item.itemTotal, 0);
-        const total = subtotal + shipping;
+                if (result.modifiedCount === 0) {
+                    throw new RequestConflictError("Stock insuficiente");
+                }
+            }
 
-        // Generate unique order number
-        const trackingNumber = await generateOrderNumber(); 
-
-        // Create order with 20-minute expiration
-        const expirationTime = new Date(Date.now() + 20 * 60000); // 20 minutes
-
-        const order = await Order.build({
-            trackingNumber,
-            customer: {
-                userId: userId || null,
-                email: customer.email,
-                name: customer.name,
-                surname: customer.surname,
-                phone: customer.phone,
-                isGuest: !userId
-            },
-            shippingAddress,
-            items: orderItems,
-            subtotal,
-            shipping,
-            total,
-            saveData: saveData && !userId, // Only for guests
-            stockReservedAt: new Date(),
-            stockReservationExpiresAt: expirationTime
-        });
-
-        
-        // TODO: Initialize payment flow 
-        // // Create Mercado Pago preference
-        // const mpPreference = await createMercadoPagoPreference(order);
-        
-        // // Create payment record
-        // const payment = await Payment.create({
-        //     orderId: order._id,
-        //     provider: 'mercadopago',
-        //     mpPreferenceId: mpPreference.id,
-        //     amount: total,
-        //     currency: 'CLP',
-        //     status: PaymentStatus.Pending
-        // });
-        
-        // // Link payment to order
-        // order.paymentId = payment._id;
-        await order.save();
-
-        //! Reserve stock for each product
-        for (const item of orderItems) {
-            await Product.updateOne(
-                { _id: item.productId },
-                { $inc: { reserved: item.quantity } }
-            );
+            await session.commitTransaction(); 
+    
+            res.status(201).json({
+                message: "Orden registrada Correctamente. Esperando pago.",
+                order
+            });
+        } catch (error) {
+            await session.abortTransaction();
+            throw error;
+        } finally {
+            session.endSession();
         }
-
-        res.status(201).json({
-            message: "Orden registrada Correctamente. Esperando pago.",
-            order
-        });
     }
 
     //? USER - Cancel order before payment, do not send notification email, only allowed if "Esperando Pago"
@@ -442,7 +468,7 @@ export class OrderController {
                 );
             }
     
-            // As of now a notification email will not be send...
+            // As of now a notification email will not be send since order wasn't payed yet...
             // await OrderStatusEmail.Cancelled.send(user, order); 
     
             await session.commitTransaction(); 
@@ -478,102 +504,126 @@ export class OrderController {
             throw new RequestConflictError("No se puede cambiar el estado manualmente a 'Esperando Pago' o 'Orden Expirada'")
         }
 
-        const order = await Order.findById(orderId); 
-        if(!order) {
-            throw new NotFoundError("Orden no Encontrada")
-        }
-
-        // Validate status transitions
-        const currentStatus = order.status;
-        const validTransitions: Record<string, string[]> = {
-            [OrderStatus.Pending]: [OrderStatus.Processing, OrderStatus.Cancelled],
-            [OrderStatus.Processing]: [OrderStatus.Sent, OrderStatus.Cancelled],
-            [OrderStatus.Sent]: [OrderStatus.Delivered, OrderStatus.Cancelled],
-            [OrderStatus.Delivered]: [], // Final state
-            [OrderStatus.Cancelled]: [], // Final state
-            [OrderStatus.Expired]: [] // Final state
-        };
-
-        if (!validTransitions[currentStatus].includes(normalizedStatus)) {
-            throw new RequestConflictError(`No se puede cambiar de '${currentStatus}' a '${normalizedStatus}'`)
-        }
-
-        if (currentStatus === normalizedStatus) {
-            throw new RequestConflictError("La orden ya tiene este estado");
-        }
-
-        // Release reserved stock if cancelled (only release if stock not yet sold)
-        if (normalizedStatus === OrderStatus.Cancelled) {
-            if (currentStatus === OrderStatus.Pending) {
-                for (const item of order.items) {
-                    await Product.updateOne(
-                        { _id: item.productId },
-                        { $inc: { reserved: -item.quantity } }
-                    );
-                }
-            } else {
-                // If already processing/sent, stock was already sold, then add back stock
-                for (const item of order.items) {
-                    await Product.updateOne(
-                        { _id: item.productId },
-                        { $inc: { stock: item.quantity } }, 
-                    );
-                }
-            } 
-
-        }
-
-        //! Convert reserved to sold stock when processing (payment confirmed)
-        if (normalizedStatus === OrderStatus.Processing && currentStatus === OrderStatus.Pending) {
-            for (const item of order.items) {
-                await Product.updateOne(
-                    { _id: item.productId },
-                    {
-                        $inc: {
-                            stock: -item.quantity,
-                            reserved: -item.quantity
+        
+        //& Start transaction to ensure all db operations were successfully processed
+        const session = await mongoose.startSession(); 
+        session.startTransaction(); 
+        
+        try {
+            // Find order
+            const order = await Order.findById(orderId).session(session); 
+            if(!order) {
+                throw new NotFoundError("Orden no Encontrada")
+            }
+    
+            // Validate status transitions
+            const currentStatus = order.status;
+            const validTransitions: Record<string, string[]> = {
+                [OrderStatus.Pending]: [OrderStatus.Processing, OrderStatus.Cancelled],
+                [OrderStatus.Processing]: [OrderStatus.Sent, OrderStatus.Cancelled],
+                [OrderStatus.Sent]: [OrderStatus.Delivered, OrderStatus.Cancelled],
+                [OrderStatus.Delivered]: [], // Final state
+                [OrderStatus.Cancelled]: [], // Final state
+                [OrderStatus.Expired]: [] // Final state
+            };
+    
+            if (!validTransitions[currentStatus].includes(normalizedStatus)) {
+                throw new RequestConflictError(`No se puede cambiar de '${currentStatus}' a '${normalizedStatus}'`)
+            }
+    
+            if (currentStatus === normalizedStatus) {
+                throw new RequestConflictError("La orden ya tiene este estado");
+            }
+            
+            // Release reserved stock if cancelled (only release if stock not yet sold)
+            if (normalizedStatus === OrderStatus.Cancelled) {
+                if (currentStatus === OrderStatus.Pending) {
+                    for (const item of order.items) {
+                        await Product.updateOne(
+                            { _id: item.productId, reserved: { $gte: item.quantity } },
+                            { $inc: { reserved: -item.quantity } }, 
+                            { session }
+                        );
+                    }
+                } else {
+                    // If already processing/sent, stock was already sold, then add back stock
+                    if (currentStatus === OrderStatus.Processing || currentStatus === OrderStatus.Sent) {
+                        for (const item of order.items) {
+                            await Product.updateOne(
+                                { _id: item.productId },
+                                { $inc: { stock: item.quantity } },
+                                { session }
+                            );
                         }
                     }
-                );
-            }
-        }
+                } 
     
-        // Set deliveredAt date if marking as delivered
-        if (normalizedStatus === OrderStatus.Delivered) {
-            order.deliveredAt = deliveredAt ? new Date(deliveredAt) : new Date();
+            }
+    
+            //! Convert reserved to sold stock when processing (payment confirmed)
+            if (normalizedStatus === OrderStatus.Processing && currentStatus === OrderStatus.Pending) {
+                for (const item of order.items) {
+                    await Product.updateOne(
+                        { 
+                            _id: item.productId ,
+                            reserved: { $gte: item.quantity },
+                            stock: { $gte: item.quantity }
+                        },
+                        {
+                            $inc: {
+                                stock: -item.quantity,
+                                reserved: -item.quantity
+                            }
+                        }, 
+                        { session }
+                    );
+                }
+            }
+        
+            // Set deliveredAt date if marking as delivered
+            if (normalizedStatus === OrderStatus.Delivered) {
+                order.deliveredAt = deliveredAt ? new Date(deliveredAt) : new Date();
+            }
+    
+            // Update order status
+            order.status = normalizedStatus as OrderStatus;
+            await order.save({ session });
+    
+            //! CRITICAL: EMAIL SENDING LOGIC DEPENDING ON THE STATUSES
+            // try {
+            //     switch(status) {
+            //         case OrderStatus.Pending:
+            //             await OrderStatusEmail.Pending.send(userData, order);
+            //             break;
+            //         case OrderStatus.Sent:
+            //             await OrderStatusEmail.Sent.send(userData, order);
+            //             break;
+            //         case OrderStatus.Delivered:
+            //             await OrderStatusEmail.Delivered.send(userData, order);
+            //             break;
+            //         case OrderStatus.Cancelled:
+            //             await OrderStatusEmail.Cancelled.send(userData, order);
+            //             break;
+            //     }
+            // } catch (emailError) {
+            //     // Log email error but don't fail the request
+            //     console.error("Error sending status update email:", emailError);
+            //     // Email failed but order status was updated successfully
+            // }
+    
+            await session.commitTransaction(); 
+    
+            res.status(200).json({
+                message: "Estado de la Orden actualizado correctamente",
+                order: formatLean(order.toObject())
+            });
+        } catch (error) {
+            await session.abortTransaction(); 
+            throw error; 
+        } finally {
+            session.endSession();
         }
 
-        // Update order status
-        order.status = normalizedStatus as OrderStatus;
-        await order.save();
-
-        //! CRITICAL: EMAIL SENDING LOGIC DEPENDING ON THE STATUSES
-        // try {
-        //     switch(status) {
-        //         case OrderStatus.Pending:
-        //             await OrderStatusEmail.Pending.send(userData, order);
-        //             break;
-        //         case OrderStatus.Sent:
-        //             await OrderStatusEmail.Sent.send(userData, order);
-        //             break;
-        //         case OrderStatus.Delivered:
-        //             await OrderStatusEmail.Delivered.send(userData, order);
-        //             break;
-        //         case OrderStatus.Cancelled:
-        //             await OrderStatusEmail.Cancelled.send(userData, order);
-        //             break;
-        //     }
-        // } catch (emailError) {
-        //     // Log email error but don't fail the request
-        //     console.error("Error sending status update email:", emailError);
-        //     // Email failed but order status was updated successfully
-        // }
-
-
-        res.status(200).json({
-            message: "Estado de la Orden actualizado correctamente",
-            order: formatLean(order.toObject())
-        });
     }
 
     //! ADMIN - PERMANENT DELETE
