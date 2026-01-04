@@ -2,6 +2,11 @@
 process.env.JWT_SECRET = "testsecret";
 process.env.DATABASE_URL = "mongodb://tickets-mongo-srv:27017/tickets";
 process.env.RESEND_API_KEY = "mock_resend_key"
+process.env.MP_ACCESS_TOKEN="test_access_token"
+process.env.MP_PUBLIC_KEY="test_public_key"
+process.env.MP_WEBHOOK_SECRET="test_webhook_secret"
+process.env.FRONTEND_URL="http://localhost:3000"
+process.env.BACKEND_URL="http://localhost:4000"
 
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import mongoose from "mongoose";

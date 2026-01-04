@@ -26,6 +26,28 @@ if(!process.env.RESEND_API_KEY) {
     throw new Error("RESEND_API_KEY must be defined")
 }
 
+if(!process.env.MP_ACCESS_TOKEN) {
+    throw new Error("MP_ACCESS_TOKEN must be defined")
+}
+
+if(!process.env.MP_PUBLIC_KEY) {
+    throw new Error("MP_PUBLIC_KEY must be defined")
+}
+
+if(!process.env.MP_WEBHOOK_SECRET) {
+    throw new Error("MP_WEBHOOK_SECRET must be defined")
+}
+
+if(!process.env.FRONTEND_URL) {
+    throw new Error("FRONTEND_URL must be defined")
+}
+
+if(!process.env.BACKEND_URL) {
+    throw new Error("BACKEND_URL must be defined")
+}
+
+
+
 connectDB()
 
 const app = express(); 

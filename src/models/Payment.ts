@@ -26,7 +26,6 @@ export interface PaymentInterface extends Document {
     currency: string 
 
     status: PaymentStatus
-
     paymentMethod: string // credit_card, debit_card, etc... 
 
     metadta: Object // Store Additional MP data
