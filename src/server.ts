@@ -7,9 +7,10 @@ import { connectDB } from "./config/db";
 import cookieSession from "cookie-session";
 import { NotFoundError } from "./errors/not-found";
 import { errorHandler } from "./middleware/error";
-import authRouter from "./routes/authRouter"
-import productRouter from "./routes/productRouter"
-import orderRouter from "./routes/orderRouter"
+import authRouter from "./routes/authRouter"; 
+import productRouter from "./routes/productRouter"; 
+import orderRouter from "./routes/orderRouter"; 
+import paymentRouter from "./routes/paymentRouter"; 
 
 dotenv.config();
 
@@ -75,6 +76,7 @@ app.use(cors());
 app.use("/api/auth", authRouter)
 app.use("/api/products", productRouter)
 app.use("/api/orders", orderRouter)
+app.use("/api/payments", paymentRouter)
 
 //? Trigger not-found error | before Error Handler & after router declarations
 app.all("/{*splat}/" , async (req, res, next) => {

@@ -173,7 +173,8 @@ toJSON(userSchema, "password");
 
 //? Indexes
 userSchema.index({ email: 1 }, { unique: true });
-userSchema.index({ role: 1 });
+userSchema.index({ role: 1 })
+userSchema.index({ name: 1, confirmed: -1 })
 
 // Hashing Passwords by using the .pre middleware function implemented in mongoose
 // Any time an attempt to save a document to the db is made, the following code will execute

@@ -1,8 +1,8 @@
 import { Router } from "express";
-import { body, param } from "express-validator";
+import { body, param, query } from "express-validator";
 import { AuthController } from "../controllers/AuthController";
 import { handleInputErrors } from "../middleware/validation";
-import { checkDuplicatedEmail, checkEmailExists, currentUser, requireAuth, validateToken } from "../middleware/auth";
+import { checkDuplicatedEmail, checkEmailExists, currentUser, requireAdmin, requireAuth, validateToken } from "../middleware/auth";
 import { Regions } from "../models/User";
 
 const router = Router();
@@ -209,6 +209,48 @@ router.patch("/update-password",
     }), 
     handleInputErrors, 
     AuthController.updatePassword
+)
+
+//! 🔒 ADMIN ROUTES 🔒 !//
+
+//* ADMIN - List all registered Users
+// Supports pagination, filtering by account status (confirmed or not)
+// searching by email and name & filtering by name in Alphabetical order.
+router.get("/admin", 
+    currentUser, 
+    requireAdmin,
+    query("confirmed")
+        .optional()
+        .notEmpty().withMessage("El estado el usuario no puede ir vacío")
+        .isBoolean().withMessage("El estado del usuario debe ser boolean"),
+    query('search')
+        .optional()
+        .isString()
+        .trim()
+        .isLength({ min: 2, max: 50 })
+        .matches(/^[a-zA-Z0-9@._\- ]+$/)
+        .withMessage('Parámetro de búsqueda inválido'),
+    query("sortBy")
+        .optional()
+        .isIn(["name"])
+        .withMessage("Invalid sorting criteria. use 'name'"),
+    query("sortOrder")
+        .optional()
+        .isIn(["asc", "desc"])
+        .withMessage("sort order must be either 'asc' or 'desc'"),
+    handleInputErrors,
+    AuthController.getUsers
+)
+
+//* ADMIN - Get user by ID
+router.get("/admin/:userId", 
+    currentUser, 
+    requireAdmin, 
+    param("userId")
+        .notEmpty().withMessage("El ID del usuario no puede ir vacío")
+        .isMongoId().withMessage("ID de usuario inválido"),
+    handleInputErrors, 
+    AuthController.getUserById
 )
 
 export default router

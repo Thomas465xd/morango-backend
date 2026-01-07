@@ -8,9 +8,94 @@ import { NotAuthorizedError } from "../errors/not-authorized";
 import { comparePassword } from "../utils/auth";
 import { AuthEmails } from "../emails/auth";
 import Order from "../models/Order";
+import { formatLean } from "../utils/json";
 
 
 export class AuthController {
+    //* ADMIN - Get Users
+    // Supports pagination, filtering by account status (confirmed or not)
+    // searching by email and name & filtering by name in Alphabetical order.
+    static getUsers = async (req: Request, res: Response) => {
+        // Get the page and perPage query parameters (default values if not provided)
+        const page = parseInt(req.query.page as string) || 1;
+        const perPage = parseInt(req.query.perPage as string) || 10;
+
+        // Destructure possible search queries
+        // Search query param could be either email or name
+        const { confirmed, search } = req.query; 
+
+        const filters : any = {}; 
+
+        //* Filter by account status (confirmed = false || true)
+        if(confirmed === "true" || confirmed === "false") {
+            filters.confirmed = confirmed === "true"
+        }
+
+        //* Search by email or name
+        if (search) {
+            filters.$or = [
+                { name: { $regex: search, $options: 'i' } },
+                { email: { $regex: search, $options: 'i' } }
+            ];
+        }
+        
+        // Calculate skip and limit for pagination
+        const skip = (page - 1) * perPage;
+        const limit = perPage;
+
+        //? Sorting logic
+        const sortBy = req.query.sortBy as string 
+        const sortOrder: 1 | -1 = req.query.sortOrder === "asc" ? 1 : -1;
+
+        let sort : Record<string, 1 | -1> = { name: 1 } // default sorting criteria
+
+        //? Sorting options
+        if (sortBy === "name") {
+            sort = { name: sortOrder }; 
+        }
+
+        // Get the total number of users
+        const totalUsers = await User.countDocuments(filters);
+
+        //* Sort users by 
+        // Fetch the users for the current page with pagination
+        const users = await User.find(filters)
+            .skip(skip)
+            .limit(limit)
+            .sort(sort)
+            .lean() // Optimized JS object
+
+        // Calculate the total number of pages
+        const totalPages = Math.ceil(totalUsers / perPage);
+        
+        res.status(200).json({
+            users: users.map(formatLean), 
+            totalUsers,
+            totalPages, 
+            perPage, 
+            currentPage: page, 
+            filters: {
+                confirmed: confirmed || null,
+                search: search || null, 
+                sortBy: sortBy || 'name',
+                sortOrder
+            }
+        });
+    }
+
+    
+    //* ADMIN - Get User by Id
+    static getUserById = async (req: Request, res: Response) => {
+        const { userId } = req.params; 
+
+        const user = await User.findById(userId).lean(); 
+        if(!user) {
+            throw new NotFoundError("Usuario no Encontrado")
+        }
+
+        res.status(200).json(formatLean(user));
+    };
+
     //? Create new account & trigger confirmation flow
     static createAccount = async (req: Request, res: Response) => {
         const { name, surname, email, password } = req.body; 
@@ -72,43 +157,26 @@ export class AuthController {
             address,
         } = req.body; 
 
+        //! Check wether user is confirmed (confirmed: true) and has a password set (password field defined), 
+        //! if not continue with the flow, otherwise return early
         const userExists = await User.findOne({ email }); 
         if(userExists) { 
-            //! Check wether user is confirmed (confirmed: true) and has a password set (password field defined), 
-            //! if not continue with the flow, otherwise return early
             if (userExists.confirmed && userExists.password) {
-                throw new RequestConflictError("Ya existe una cuenta con este email. Por favor inicia sesión.")
+                // Link order to existing user
+                await Order.updateMany(
+                    {
+                        'customer.email': email,
+                        'customer.userId': null
+                    },
+                    {
+                        $set: {
+                            'customer.userId': userExists._id,
+                            'customer.isGuest': false
+                        }
+                    }
+                );
+                return;
             }
-
-            // User exists but hasn't set password yet - resend email
-            if (!userExists.password) {
-                // Delete old password reset token
-                await Token.deleteMany({ 
-                    userId: userExists.id, 
-                    type: "password_reset" 
-                });
-
-                // Generate new token
-                const token = generatePasswordResetToken({ id: userExists.id }); // Use crypto.randomBytes
-
-                await Token.create({
-                    userId: userExists.id,
-                    token,
-                    type: "password_reset"
-                }); 
-
-                //* Resend set password email
-                await AuthEmails.ResetPassword.send(userExists, token)
-
-                res.status(200).json({
-                    message: "Te hemos reenviado el correo para configurar tu contraseña."
-                });
-            }
-
-            // Any other existing-user state
-            throw new RequestConflictError(
-                "Ya existe una cuenta con este email."
-            );
         }
 
         // Create user & save it to the DB
@@ -121,6 +189,20 @@ export class AuthController {
             confirmed: false, 
             address
         }); 
+
+        // Link all orders with this email
+        await Order.updateMany(
+            {
+                'customer.email': email,
+                'customer.userId': null
+            },
+            {
+                $set: {
+                    'customer.userId': user._id,
+                    'customer.isGuest': false
+                }
+            }
+        );
 
         // Save the user in the DB
         await user.save()
@@ -135,6 +217,10 @@ export class AuthController {
         })
 
         //* Reset password email
+        // as of now the user has confirmed: false, but resetPasswordWithToken method
+        // ensures to set user.confirmed to true after setting up password, this for checkout accounts
+        // the Reset password email with the unique password token will serve the purpose of the confirm account 
+        // email. 
         await AuthEmails.ResetPassword.send(user, token)
 
         res.status(201).json({ 
@@ -407,6 +493,7 @@ export class AuthController {
         }
     }
 
+    //? PROFILE - Update Password 
     static updatePassword = async (req: Request, res: Response) => {
         const user = req.user; 
 
