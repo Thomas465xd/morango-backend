@@ -376,24 +376,7 @@ export class OrderController {
                 stockReservedAt: new Date(),
                 stockReservationExpiresAt: expirationTime
             });
-    
             
-            // TODO: Initialize payment flow 
-            // // Create Mercado Pago preference
-            // const mpPreference = await createMercadoPagoPreference(order);
-            
-            // // Create payment record
-            // const payment = await Payment.create({
-            //     orderId: order._id,
-            //     provider: 'mercadopago',
-            //     mpPreferenceId: mpPreference.id,
-            //     amount: total,
-            //     currency: 'CLP',
-            //     status: PaymentStatus.Pending
-            // });
-            
-            // // Link payment to order
-            // order.paymentId = payment._id;
             await order.save({ session });
     
             //! Atomically reserve stock for each product
@@ -422,6 +405,8 @@ export class OrderController {
             res.status(201).json({
                 message: "Orden registrada Correctamente. Esperando pago.",
                 order
+                // This lets frontend use orderId of response to next
+                // create the payment preference. 
             });
         } catch (error) {
             await session.abortTransaction();
@@ -467,7 +452,16 @@ export class OrderController {
                     { session }
                 );
             }
-    
+
+            // Update Payment status to Cancelled
+            if (order.paymentId) {
+                await Payment.updateOne(
+                    { _id: order.paymentId },
+                    { status: PaymentStatus.Cancelled },
+                    { session }
+                );
+            }
+
             // As of now a notification email will not be send since order wasn't payed yet...
             // await OrderStatusEmail.Cancelled.send(user, order); 
     
@@ -517,9 +511,10 @@ export class OrderController {
             }
     
             // Validate status transitions
+            // Pending to Processing transition is managed by payment approved (payment.ts handleApprovedPayment)
             const currentStatus = order.status;
             const validTransitions: Record<string, string[]> = {
-                [OrderStatus.Pending]: [OrderStatus.Processing, OrderStatus.Cancelled],
+                [OrderStatus.Pending]: [OrderStatus.Cancelled],
                 [OrderStatus.Processing]: [OrderStatus.Sent, OrderStatus.Cancelled],
                 [OrderStatus.Sent]: [OrderStatus.Delivered, OrderStatus.Cancelled],
                 [OrderStatus.Delivered]: [], // Final state
@@ -560,25 +555,26 @@ export class OrderController {
     
             }
     
-            //! Convert reserved to sold stock when processing (payment confirmed)
-            if (normalizedStatus === OrderStatus.Processing && currentStatus === OrderStatus.Pending) {
-                for (const item of order.items) {
-                    await Product.updateOne(
-                        { 
-                            _id: item.productId ,
-                            reserved: { $gte: item.quantity },
-                            stock: { $gte: item.quantity }
-                        },
-                        {
-                            $inc: {
-                                stock: -item.quantity,
-                                reserved: -item.quantity
-                            }
-                        }, 
-                        { session }
-                    );
-                }
-            }
+            // This is managed in payment approved operation
+            // //! Convert reserved to sold stock when processing (payment confirmed)
+            // if (normalizedStatus === OrderStatus.Processing && currentStatus === OrderStatus.Pending) {
+            //     for (const item of order.items) {
+            //         await Product.updateOne(
+            //             { 
+            //                 _id: item.productId ,
+            //                 reserved: { $gte: item.quantity },
+            //                 stock: { $gte: item.quantity }
+            //             },
+            //             {
+            //                 $inc: {
+            //                     stock: -item.quantity,
+            //                     reserved: -item.quantity
+            //                 }
+            //             }, 
+            //             { session }
+            //         );
+            //     }
+            // }
         
             // Set deliveredAt date if marking as delivered
             if (normalizedStatus === OrderStatus.Delivered) {
@@ -590,26 +586,23 @@ export class OrderController {
             await order.save({ session });
     
             //! CRITICAL: EMAIL SENDING LOGIC DEPENDING ON THE STATUSES
-            // try {
-            //     switch(status) {
-            //         case OrderStatus.Pending:
-            //             await OrderStatusEmail.Pending.send(userData, order);
-            //             break;
-            //         case OrderStatus.Sent:
-            //             await OrderStatusEmail.Sent.send(userData, order);
-            //             break;
-            //         case OrderStatus.Delivered:
-            //             await OrderStatusEmail.Delivered.send(userData, order);
-            //             break;
-            //         case OrderStatus.Cancelled:
-            //             await OrderStatusEmail.Cancelled.send(userData, order);
-            //             break;
-            //     }
-            // } catch (emailError) {
-            //     // Log email error but don't fail the request
-            //     console.error("Error sending status update email:", emailError);
-            //     // Email failed but order status was updated successfully
-            // }
+            try {
+                switch(normalizedStatus) {
+                    case OrderStatus.Sent:
+                        await OrderStatusEmail.Sent.send(order);
+                        break;
+                    case OrderStatus.Delivered:
+                        await OrderStatusEmail.Delivered.send(order);
+                        break;
+                    case OrderStatus.Cancelled:
+                        await OrderStatusEmail.Cancelled.send(order);
+                        break;
+                }
+            } catch (emailError) {
+                // Log email error but don't fail the request
+                console.error("Error sending status update email:", emailError);
+                // Email failed but order status was updated successfully
+            }
     
             await session.commitTransaction(); 
     
@@ -664,14 +657,13 @@ export class OrderController {
             // Cancelled/Expired: Stock already released
             // Delivered: Keep stock as sold (completed transaction)
 
-            // TODO: Delete Payment info of the order
-            // Delete associated payment if exists
-            // if (order.paymentId) {
-            //     await Payment.deleteOne(
-            //         { _id: order.paymentId },
-            //         { session }
-            //     );
-            // }
+            //! Delete Payment info of the order if it exists
+            if (order.paymentId) {
+                await Payment.deleteOne(
+                    { _id: order.paymentId },
+                    { session }
+                );
+            }
     
             await order.deleteOne({ session });
 
