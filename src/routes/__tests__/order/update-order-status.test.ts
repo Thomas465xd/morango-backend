@@ -3,6 +3,7 @@ import server from "../../../server"
 import Product from "../../../models/Product";
 import mongoose from "mongoose";
 import Order, { OrderStatus } from "../../../models/Order";
+import resend from "../../../config/resend";
 
 //? 📋 Input Validation Tests
 describe("PATCH /api/orders/admin/status/:orderId Input Validation Tests", () => {
@@ -158,37 +159,89 @@ describe("updateOrderStatus Request Handler Tests", () => {
             })
             .set("Cookie", global.setCookie(admin.id))
             .expect(409)
-    })
 
-    it("Returns a 200 OK if Processing and Sent status are successfully set along with reserved and sold stock updates", async () => {
-        const admin = await global.createUser(true, true); 
-        const customer = await global.createUser(true, false, "customer@customer.com")
+        order.status = OrderStatus.Pending
+        await order.save(); 
 
-        const { order, firstProduct } = await global.createOrder(customer); 
-
-        const reservedStock = await Product.findById(firstProduct.id); 
-        expect(reservedStock.reserved).toEqual(1); 
-        expect(reservedStock.stock).toEqual(8)
-
-        const r1 = await request(server)
+        // Should throw since Pending → Processing transition is invalid
+        // (only in this method, since it is managed in payment approved)
+        await request(server)
             .patch(`/api/orders/admin/status/${order.id}`)
             .send({
                 status: "Processing"
             })
             .set("Cookie", global.setCookie(admin.id))
-            .expect(200)
+            .expect(409)
 
-        const soldStock = await Product.findById(firstProduct.id)
-        expect(soldStock.reserved).toEqual(0), 
+        await request(server)
+            .patch(`/api/orders/admin/status/${order.id}`)
+            .send({
+                status: "Sent"
+            })
+            .set("Cookie", global.setCookie(admin.id))
+            .expect(409)
+
+        await request(server)
+            .patch(`/api/orders/admin/status/${order.id}`)
+            .send({
+                status: "Delivered"
+            })
+            .set("Cookie", global.setCookie(admin.id))
+            .expect(409)
+    })
+
+    //? Deprecated test since Pending to Processing transition is managed by payment approved operation
+    // it("Returns a 200 OK if Processing and Sent status are successfully set along with reserved and sold stock updates", async () => {
+    //     const admin = await global.createUser(true, true); 
+    //     const customer = await global.createUser(true, false, "customer@customer.com")
+
+    //     const { order, firstProduct } = await global.createOrder(customer); 
+
+    //     const reservedStock = await Product.findById(firstProduct.id); 
+    //     expect(reservedStock.reserved).toEqual(1); 
+    //     expect(reservedStock.stock).toEqual(8)
+
+    //     const r1 = await request(server)
+    //         .patch(`/api/orders/admin/status/${order.id}`)
+    //         .send({
+    //             status: "Processing"
+    //         })
+    //         .set("Cookie", global.setCookie(admin.id))
+    //         .expect(200)
+
+    //     const soldStock = await Product.findById(firstProduct.id)
+    //     expect(soldStock.reserved).toEqual(0), 
+    //     expect(soldStock.stock).toEqual(7)
+
+    //     const updatedOrder = await Order.findById(order.id); 
+    //     expect(updatedOrder.status).toEqual(OrderStatus.Processing); 
+
+    //     expect(r1.body.order).toBeDefined(); 
+    //     expect(r1.body.order.status).toEqual(OrderStatus.Processing);
+
+    //     const r2 = await request(server)
+    //         .patch(`/api/orders/admin/status/${order.id}`)
+    //         .send({
+    //             status: "Sent"
+    //         })
+    //         .set("Cookie", global.setCookie(admin.id))
+    //         .expect(200)
+
+    //     expect(r2.body.order).toBeDefined();
+    //     expect(r2.body.order.status).toEqual(OrderStatus.Sent);
+    // })
+
+    it("Returns a 200 OK if Processing → Sent status transition is successfully set (no stock updates)", async () => {
+        const admin = await global.createUser(true, true); 
+        const customer = await global.createUser(true, false, "customer@customer.com")
+
+        const { order, firstProduct } = await global.createOrder(customer, OrderStatus.Processing); 
+
+        const soldStock = await Product.findById(firstProduct.id); 
+        expect(soldStock.reserved).toEqual(0); 
         expect(soldStock.stock).toEqual(7)
 
-        const updatedOrder = await Order.findById(order.id); 
-        expect(updatedOrder.status).toEqual(OrderStatus.Processing); 
-
-        expect(r1.body.order).toBeDefined(); 
-        expect(r1.body.order.status).toEqual(OrderStatus.Processing);
-
-        const r2 = await request(server)
+        const r1 = await request(server)
             .patch(`/api/orders/admin/status/${order.id}`)
             .send({
                 status: "Sent"
@@ -196,8 +249,14 @@ describe("updateOrderStatus Request Handler Tests", () => {
             .set("Cookie", global.setCookie(admin.id))
             .expect(200)
 
-        expect(r2.body.order).toBeDefined();
-        expect(r2.body.order.status).toEqual(OrderStatus.Sent);
+        // Expect resend to have been called one time for "En Transito" email
+        expect(resend.emails.send).toHaveBeenCalledTimes(1); 
+
+        const updatedOrder = await Order.findById(order.id); 
+        expect(updatedOrder.status).toEqual(OrderStatus.Sent); 
+
+        expect(r1.body.order).toBeDefined(); 
+        expect(r1.body.order.status).toEqual(OrderStatus.Sent);
     })
 
     it("Returns a 200 OK if Delivered status is successfully set along with deliveredAt Date", async () => {
@@ -214,6 +273,9 @@ describe("updateOrderStatus Request Handler Tests", () => {
             })
             .set("Cookie", global.setCookie(admin.id))
             .expect(200)
+
+        // Expect resend to have been called one time for delivered order email
+        expect(resend.emails.send).toHaveBeenCalledTimes(1); 
 
         const updatedOrder = await Order.findById(order.id); 
         expect(updatedOrder.status).toEqual(OrderStatus.Delivered); 
@@ -241,6 +303,9 @@ describe("updateOrderStatus Request Handler Tests", () => {
             })
             .set("Cookie", global.setCookie(admin.id))
             .expect(200)
+
+        // Expect resend to have been called one time for cancelled order email
+        expect(resend.emails.send).toHaveBeenCalledTimes(1); 
 
         const releasedStock = await Product.findById(firstProduct.id); 
         expect(releasedStock.reserved).toEqual(0); 
@@ -270,6 +335,9 @@ describe("updateOrderStatus Request Handler Tests", () => {
             })
             .set("Cookie", global.setCookie(admin.id))
             .expect(200)
+
+        // Expect resend to have been called one time for cancelled order email
+        expect(resend.emails.send).toHaveBeenCalledTimes(1); 
 
         const readdedStock = await Product.findById(firstProduct.id); 
         expect(readdedStock.stock).toEqual(8); 

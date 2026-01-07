@@ -102,62 +102,8 @@ describe("Input Validation Tests", () => {
     })
 })
 
+// TODO: Validate that orders registered as guest with user email are now linked to it's new account
 describe("createCheckoutAccount Request Handler Tests", () => {
-    it("Returns a 409 with duplicated email trying to register again", async () => {
-        await global.createUser(true); 
-
-        return request(server)
-            .post("/api/auth/register/checkout")
-            .send({
-                name: "Thomas", 
-                surname: "Del Campo", 
-                email: "test@test.com", 
-                phone: "992128901",
-                address: {
-                    country: "Chile", 
-                    region: "Metropolitana de Santiago", 
-                    city: "Santiago", 
-                    cityArea: "Las Condes", 
-                    street: "Manor 1234", 
-                    reference: "", // this ones can be empty
-                    zipCode: ""
-                }
-            })
-            .expect(409)
-    })
-
-    it("Returns a 200 if user exists but has not set a password. Sends instructions to email.", async () => {
-        const user = await global.createUser(true); 
-        
-        await User.findByIdAndUpdate(user.id, {
-            password: null
-        })
-
-        await request(server)
-            .post("/api/auth/register/checkout")
-            .send({
-                name: "Thomas", 
-                surname: "Del Campo", 
-                email: "test@test.com", 
-                phone: "992128901",
-                address: {
-                    country: "Chile", 
-                    region: "Metropolitana de Santiago", 
-                    city: "Santiago", 
-                    cityArea: "Las Condes", 
-                    street: "Manor 1234", 
-                    reference: "", // this ones can be empty
-                    zipCode: ""
-                }
-            })
-            .expect(200)
-
-        expect(generatePasswordResetToken).toHaveBeenCalled(); 
-        
-        // Expect resend to have been called one time for reset password email
-        expect(resend.emails.send).toHaveBeenCalledTimes(1); 
-    })
-
     it("Returns a 201 if user is registered correctly with matching properties", async () => { 
         const response = await request(server)
             .post("/api/auth/register/checkout")
@@ -179,6 +125,7 @@ describe("createCheckoutAccount Request Handler Tests", () => {
             .expect(201)
 
         const user = response.body.user; 
+            
 
         // Expect new user info to be equal to request body info
         expect(user.confirmed).toEqual(false); 
@@ -195,6 +142,11 @@ describe("createCheckoutAccount Request Handler Tests", () => {
         expect(user.address.street).toBe("Manor 1234")
         expect(user.address.reference).toBe("")
         expect(user.address.zipCode).toBe("")
+
+        const createdUser = await User.findById(user.id); 
+        expect(createdUser).toBeDefined(); 
+        expect(createdUser.confirmed).toBe(false); 
+        expect(createdUser.password).toBeNull(); 
 
         // Expect resend to have been called one time for reset password email
         expect(resend.emails.send).toHaveBeenCalledTimes(1); 

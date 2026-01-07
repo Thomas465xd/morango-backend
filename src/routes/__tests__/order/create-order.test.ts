@@ -629,7 +629,7 @@ describe("createOrder Request Handler Tests", () => {
 
         // Get the order from response
         const orderData = response.body.order;
-        //console.log('Order created:', orderData);
+        console.log('Order created:', orderData);
 
         // Verify stock was reserved
         let productAfterOrder = await Product.findById(product._id);
