@@ -182,6 +182,7 @@ export class PaymentController {
             orderStatus: order.status, 
             paymentStatus: payment.status, 
             mpStatus: payment.mpStatus, 
+            rejectionReason: payment.rejectionReason ? payment.rejectionReason : null,
             paymentMethod: payment.paymentMethod, 
             amount: payment.amount 
         })
@@ -296,7 +297,7 @@ export class PaymentController {
         // Get Payment ID from notification
         const paymentId = data.id; 
 
-        // Fetch payment details from MP
+        //! Fetch payment details from MP
         const mpPayment = await paymentClient.get({ id: paymentId }); 
 
         console.log('MP Payment details:', mpPayment);
@@ -342,14 +343,35 @@ export class PaymentController {
             'in_process': PaymentStatus.Pending,
             'pending': PaymentStatus.Pending
         };
+
+        payment.status = statusMap[mpPayment.status!] || PaymentStatus.Pending;
+
+        //! Store rejection reason ONLY for rejected/cancelled | UX
+        if (mpPayment.status === 'rejected' || mpPayment.status === 'cancelled') {
+            // console.log(mpPayment.status_detail)
+
+            const rejectionMessages: Record<string, string> = {
+                cc_rejected_insufficient_amount: "Fondos insuficientes",
+                cc_rejected_bad_filled_card_number: "Número de tarjeta inválido",
+                cc_rejected_bad_filled_security_code: "Código de seguridad incorrecto",
+                cc_rejected_card_disabled: "Tarjeta deshabilitada",
+                cc_rejected_call_for_authorize: "El banco requiere autorización",
+                default: "El pago fue rechazado"
+            };
+
+            const userMessage = rejectionMessages[mpPayment.status_detail] || rejectionMessages.default
+
+            payment.rejectionReason = userMessage; 
+        }
+
         
         payment.status = statusMap[mpPayment.status!] || PaymentStatus.Pending;
         await payment.save();
         
-        // Handle payment outcome
+        //& Handle payment outcome
         if (mpPayment.status === 'approved') {
 
-            // Order already expired → refund path
+            //! EDGE CASE Order already expired → refund path
             if (order.status === OrderStatus.Expired) {
                 console.warn(
                     `Late approved payment for expired order ${order.trackingNumber}`
@@ -373,10 +395,10 @@ export class PaymentController {
                 throw new ResourceExpiredError("Pago Reembolsado (orden expirada).")
             }
 
-            // ✅ Normal flow
+            //* Normal flow
             await handleApprovedPayment(order, payment);
         } else if (mpPayment.status === 'rejected' || mpPayment.status === 'cancelled') { 
-            await handleFailedPayment(order, payment); 
+            await handleFailedPayment(order, payment); // payment.rejectionReason for payment rejection reason in email 
         }
 
         res.status(200).send("OK")

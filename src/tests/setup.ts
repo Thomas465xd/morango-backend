@@ -1,12 +1,6 @@
-// Set environment variables BEFORE importing anything
-process.env.JWT_SECRET = "testsecret";
-process.env.DATABASE_URL = "mongodb://tickets-mongo-srv:27017/tickets";
-process.env.RESEND_API_KEY = "mock_resend_key"
-process.env.MP_ACCESS_TOKEN="test_access_token"
-process.env.MP_PUBLIC_KEY="test_public_key"
-process.env.MP_WEBHOOK_SECRET="test_webhook_secret"
-process.env.FRONTEND_URL="http://localhost:3000"
-process.env.BACKEND_URL="http://localhost:4000"
+import dotenv from "dotenv";
+
+dotenv.config({ path: ".env.test" });
 
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import mongoose from "mongoose";
@@ -17,6 +11,8 @@ import { generateConfirmationToken, generatePasswordResetToken } from "../utils/
 import Product, { ProductInterface, ProductTypes } from "../models/Product";
 import Order, { OrderInterface, OrderStatus } from "../models/Order";
 import { generateOrderNumber } from "../utils/order";
+import Payment, { PaymentInterface, PaymentStatus } from "../models/Payment";
+import { RequestConflictError } from "../errors/conflict-error";
 
 type CreateProductArgs = {
     category?: string;
@@ -37,10 +33,11 @@ type CreateProductArgs = {
 
 declare global {
 	var setCookie: (userId?: mongoose.Types.ObjectId) => string[];
-    var createUser: (confirmed: boolean, admin?: boolean, email?: string) => Promise<UserInterface>;
+    var createUser: (confirmed: boolean, admin?: boolean, email?: string, name?: string) => Promise<UserInterface>;
     var createToken: (userId: mongoose.Types.ObjectId, type: string) => Promise<TokenInterface>;
     var createProduct: (args?: CreateProductArgs) => Promise<ProductInterface>
     var createOrder: (user?: UserInterface, status?: OrderStatus, createdAt?: Date) => Promise<{order: OrderInterface, firstProduct: ProductInterface, secondProduct: ProductInterface}>
+    var createPayment: (order: OrderInterface, mpPaymentId?: string) => Promise<PaymentInterface>
 }
 
 // Mock the connectDB function before importing server
@@ -129,14 +126,14 @@ global.setCookie = (userId?: mongoose.Types.ObjectId) => {
 };
 
 //* Declare Create User function
-global.createUser = async (confirmed: boolean, admin?: boolean, email?: string) => {
-    const name = "Thomas"
+global.createUser = async (confirmed: boolean, admin?: boolean, email?: string, name?: string) => {
+    const username = name ? name : "Thomas"
     const surname = "Schrödinger"
     const uniqueEmail = email ? email : "test@test.com"
     const password = "password"
 
     const user = User.build({
-        name, 
+        name: username, 
         surname, 
         email: uniqueEmail, 
         password, 
@@ -342,3 +339,71 @@ global.createOrder = async (user?: UserInterface, status?: OrderStatus, createdA
 
     return { firstProduct, secondProduct, order }; 
 } 
+
+//* Declare global create payment helper function
+global.createPayment = async (order: OrderInterface, mpPaymentId?: string) => {
+    if(
+        order.status === OrderStatus.Processing || 
+        order.status === OrderStatus.Sent || 
+        order.status === OrderStatus.Delivered
+    ) {
+        // Create or update payment record
+        let payment = await Payment.findOne({ orderId: order._id })
+
+        if(payment) {
+            // if payment found, update it
+            payment.mpPreferenceId = "mock-pref-id"
+            await payment.save(); 
+        } else {
+            // else create new payment & link it to order
+            payment = await Payment.create({
+                orderId: order.id, 
+                provider: "mercadopago", 
+                mpPreferenceId: "mock-pref-id", 
+                mpPaymentId: mpPaymentId ? mpPaymentId : null,
+                amount: order.total, 
+                currency: "CLP", 
+                status: PaymentStatus.Approved, 
+                createdAt: order.createdAt
+            })
+            
+            // Link payment to order
+            order.paymentId = payment.id;
+            
+            await order.save()
+        }
+
+        return payment 
+    } else if (order.status === OrderStatus.Cancelled || order.status === OrderStatus.Expired) {
+        throw new RequestConflictError("Cannot Pay for a cancelled or expired order")
+    } else if (order.status === OrderStatus.Pending) {
+        // Create or update payment record
+        let payment = await Payment.findOne({ orderId: order._id })
+    
+        if(payment) {
+            // if payment found, update it
+            payment.mpPreferenceId = "mock-pref-id"
+            await payment.save(); 
+        } else {
+            // else create new payment & link it to order
+            payment = await Payment.create({
+                orderId: order.id, 
+                provider: "mercadopago", 
+                mpPreferenceId: "mock-pref-id", 
+                mpPaymentId: mpPaymentId ? mpPaymentId : null,
+                amount: order.total, 
+                currency: "CLP", 
+                status: PaymentStatus.Pending, 
+                createdAt: order.createdAt
+            })
+            
+            // Link payment to order
+            order.paymentId = payment.id;
+            
+            await order.save()
+        }
+    
+        return payment
+    }
+
+}; 

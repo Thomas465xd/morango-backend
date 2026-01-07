@@ -26,6 +26,8 @@ export interface PaymentInterface extends Document {
     currency: string 
 
     status: PaymentStatus
+    rejectionReason: string; // will be send to the client if payment rejected
+
     paymentMethod: string // credit_card, debit_card, etc... 
 
     metadata: Object // Store Additional MP data
@@ -96,6 +98,11 @@ const paymentSchema : Schema = new Schema(
             required: true,
             enum: Object.values(PaymentStatus),
             default: PaymentStatus.Pending,
+        },
+
+        rejectionReason: {
+            type: String, 
+            required: false, 
         },
         
         paymentMethod: {

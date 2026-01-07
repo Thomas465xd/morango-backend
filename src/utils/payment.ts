@@ -46,24 +46,25 @@ export async function handleApprovedPayment(order: OrderInterface, payment: Paym
 export async function handleFailedPayment(order: OrderInterface, payment: PaymentInterface) {
     try {
         console.log(`Processing failed payment for order ${order.trackingNumber}`);
+
+        //! DO NOT cancel order since then retry could not be possible
+        // // 1. Release reserved stock (only if still in Pending status)
+        // if (order.status === OrderStatus.Pending) {
+        //     for (const item of order.items) {
+        //         await Product.updateOne(
+        //             { _id: item.productId },
+        //             { $inc: { reserved: -item.quantity } }
+        //         );
+        //     }
+        // }
         
-        // 1. Release reserved stock (only if still in Pending status)
-        if (order.status === OrderStatus.Pending) {
-            for (const item of order.items) {
-                await Product.updateOne(
-                    { _id: item.productId },
-                    { $inc: { reserved: -item.quantity } }
-                );
-            }
-        }
+        // // 2. Update order status to cancelled
+        // order.status = OrderStatus.Cancelled;
+        // await order.save();
         
-        // 2. Update order status to cancelled
-        order.status = OrderStatus.Cancelled;
-        await order.save();
+        //console.log(`Stock released for failed order ${order.trackingNumber}`);
         
-        console.log(`Stock released for failed order ${order.trackingNumber}`);
-        
-        // 3. Send payment failed email
+        // Send payment failed email
         await PaymentEmails.Failed.send(order, payment);
         
     } catch (error) {
