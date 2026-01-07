@@ -1,16 +1,17 @@
 import resend from "../../config/resend";
 import { InternalServerError } from "../../errors/server-error";
 import { OrderInterface } from "../../models/Order";
+import { PaymentInterface } from "../../models/Payment";
 
-export class PendingOrderEmail {
-    static sendPendingOrderEmail = async (order: OrderInterface) => { 
+export class PaymentApprovedEmail {
+    static sendPaymentApprovedEmail = async (order: OrderInterface, payment: PaymentInterface) => { 
         try {
             const emailHTML = ``;
 
             const mailOptions = {
                 from: `"Morango Joyas" <${process.env.NOREPLY_EMAIL}>`,
                 to: [order.customer.email], 
-                subject: `✨📦 Orden Registrada - ${order.customer.name}`, 
+                subject: `✅✨ Pago Completado - ${order.trackingNumber}`, 
                 html: emailHTML
             }
 

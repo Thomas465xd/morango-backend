@@ -1,6 +1,5 @@
 import toJSON from "../utils/json";
 import mongoose, { Schema, Document, Model, Types } from "mongoose";
-import Order from "./Order";
 
 export enum PaymentStatus {
     Pending = "pending",
@@ -8,6 +7,7 @@ export enum PaymentStatus {
     Rejected = "rejected", 
     Cancelled = "cancelled", 
     Refunded = "refunded", 
+    Expired = "expired"
 }
 
 // Document interface = what exists after saving in Mongo
@@ -28,7 +28,7 @@ export interface PaymentInterface extends Document {
     status: PaymentStatus
     paymentMethod: string // credit_card, debit_card, etc... 
 
-    metadta: Object // Store Additional MP data
+    metadata: Object // Store Additional MP data
 
     createdAt: Date; 
     updatedAt: Date; 
@@ -38,13 +38,10 @@ export interface PaymentInterface extends Document {
 export interface PaymentAttrs {
     orderId: Types.ObjectId
     provider: "mercadopago"
-    mpPaymentId: string
     mpPreferenceId: string 
-    mpStatus: string 
     amount: number 
     currency: string 
     status: PaymentStatus
-    paymentMethod: string
 }
 
 // Model interface = adds a build method that uses PaymentAttrs
@@ -60,7 +57,6 @@ const paymentSchema : Schema = new Schema(
             type: Schema.Types.ObjectId,
             required: true,
             ref: "Order",
-            index: true,
         },
         provider: {
             type: String,
@@ -73,12 +69,10 @@ const paymentSchema : Schema = new Schema(
         mpPaymentId: {
             type: String,
             required: false, // Not set until payment is processed
-            index: true,
         },
         mpPreferenceId: {
             type: String,
             required: true,
-            index: true,
         },
         mpStatus: {
             type: String,
