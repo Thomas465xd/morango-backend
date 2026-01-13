@@ -6,17 +6,9 @@ type UserPayLoad = {
     id: Types.ObjectId;  // The payload contains a MongoDB ObjectId (user ID)
 }
 
-// Token for Authentication (Login)
+// Token for Authentication | for admin and user
 export const generateJWT = (payload: UserPayLoad) => {
     const token = jwt.sign(payload, process.env.JWT_SECRET!, { 
-        expiresIn: "7d"  // Token expires in 7 days
-    });
-    return token;
-}
-
-// Token for Admin
-export const generateAdminJWT = (payload: UserPayLoad) => {
-    const token = jwt.sign(payload, process.env.ADMIN_SECRET!, { 
         expiresIn: "7d"  // Token expires in 7 days
     });
     return token;

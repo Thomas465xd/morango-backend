@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import Token from "../models/Token";
 import User, { Roles } from "../models/User";
-import { generateAdminJWT, generateConfirmationToken, generateJWT, generatePasswordResetToken } from "../utils/jwt";
+import { generateConfirmationToken, generateJWT, generatePasswordResetToken } from "../utils/jwt";
 import { RequestConflictError } from "../errors/conflict-error";
 import { NotFoundError } from "../errors/not-found";
 import { NotAuthorizedError } from "../errors/not-authorized";
@@ -175,7 +175,13 @@ export class AuthController {
                         }
                     }
                 );
-                return;
+                res.status(200).json({
+                    message: "Usuario ya existente. Orden asociada correctamente.",
+                    user: {
+                        id: userExists.id,
+                        email: userExists.email
+                    }
+                });
             }
         }
 
@@ -248,7 +254,7 @@ export class AuthController {
         await user.save()
         await tokenExists.deleteOne()
 
-        res.status(201).json({ message: "Cuenta confirmada Existosamente" })
+        res.status(201).json({ message: "Cuenta confirmada Existosamente." })
     }
 
     //? Login if valid credentials are provided (email, password)
@@ -274,7 +280,7 @@ export class AuthController {
             //* Send Confirmation Email
             await AuthEmails.ConfirmAccount.send(user, token.token)
 
-            throw new NotAuthorizedError("Cuenta no confirmada, hemos enviado un email de verficación")
+            throw new NotAuthorizedError("Cuenta no confirmada, hemos enviado un email de verficación.")
         }
 
         // Check if passwords match
@@ -287,12 +293,12 @@ export class AuthController {
         const isAdmin = user.role === Roles.Admin; 
         const payload = { id: user.id, role: user.role };
 
-        const token = isAdmin ? generateAdminJWT(payload) : generateJWT(payload);
+        const token = generateJWT(payload);
 
         //~ Store the jwt in session object
         req.session = {
-            jwt: token
-        }
+            jwt: token,
+        };
 
         res.status(200).json({
             message: "Inicio de sesión exitoso",
@@ -303,6 +309,11 @@ export class AuthController {
     static getUser = async (req: Request, res: Response) => {
         const user = req.user
         res.status(200).json( user );
+    }
+
+    static logout = async (req: Request, res: Response) => {
+        req.session = null; 
+        res.status(200).json({ message: "Successfully logged out" })
     }
 
     //? Resend account confirmation email
@@ -320,7 +331,7 @@ export class AuthController {
             throw new RequestConflictError("El usuario ya esta confirmado.")
         }
 
-        // See if there is already an active "password_reset" token to delete it
+        // See if there is already an active "email_verification" token to delete it
         const tokenRecord = await Token.findOne({ userId: user.id, type: "email_verification" })
         if(tokenRecord) {
             await tokenRecord.deleteOne(); 
@@ -328,7 +339,7 @@ export class AuthController {
 
         const confirmationToken = await Token.create({
             userId: user.id, 
-            token: generatePasswordResetToken({ id: user.id }), 
+            token: generateConfirmationToken({ id: user.id }), 
             type: "email_verification"
         })
 
@@ -414,7 +425,7 @@ export class AuthController {
         const isAdmin = user.role === Roles.Admin; 
         const payload = { id: user.id, role: user.role };
 
-        const token = isAdmin ? generateAdminJWT(payload) : generateJWT(payload);
+        const token = generateJWT(payload);
 
         //~ Store the jwt in session object
         req.session = {

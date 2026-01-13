@@ -99,8 +99,8 @@ router.post("/login",
 // Resend verification email
 router.post("/resend-verification", 
     body("email")
-    .notEmpty().withMessage("Email no puede ir vacío")
-    .isEmail().withMessage("Email inválido"),
+        .notEmpty().withMessage("Email no puede ir vacío")
+        .isEmail().withMessage("Email inválido"),
     handleInputErrors, 
     checkEmailExists,
     AuthController.requestConfirmationEmail
@@ -109,8 +109,8 @@ router.post("/resend-verification",
 // Forgot Password Email
 router.post("/forgot-password", 
     body("email")
-    .notEmpty().withMessage("Email no puede ir vacío")
-    .isEmail().withMessage("Email inválido"),
+        .notEmpty().withMessage("Email no puede ir vacío")
+        .isEmail().withMessage("Email inválido"),
     handleInputErrors, 
     checkEmailExists,
     AuthController.requestPasswordEmail
@@ -138,8 +138,12 @@ router.post("/reset-password/:token",
 // Get Current Auth User
 router.get("/user", 
     currentUser, 
-    requireAuth, 
     AuthController.getUser
+)
+
+// Logout
+router.post("/logout", 
+    AuthController.logout
 )
 
 // Update Profile info | including address info

@@ -11,6 +11,7 @@ import authRouter from "./routes/authRouter";
 import productRouter from "./routes/productRouter"; 
 import orderRouter from "./routes/orderRouter"; 
 import paymentRouter from "./routes/paymentRouter"; 
+import { corsConfig } from "./config/cors";
 
 dotenv.config();
 
@@ -62,7 +63,7 @@ app.use(bodyParser.json());
 //? Cookies config middleware
 app.use(cookieSession({
     signed: false, 
-    secure: process.env.NODE_ENV !== "test",
+    secure: process.env.NODE_ENV === "production",
     httpOnly: true
 }))
 
@@ -70,7 +71,7 @@ app.use(cookieSession({
 app.use(morgan("dev"));
 
 //? CORS Setup
-app.use(cors());
+app.use(cors(corsConfig));
 
 //? Routes
 app.use("/api/auth", authRouter)

@@ -2,7 +2,7 @@ import { CorsOptions } from "cors";
 
 export const corsConfig: CorsOptions = {
     origin: function (origin, callback) {
-        const whitelist = [process.env.FRONTEND_URL, "https://mywebsite.com"];
+        const whitelist = [process.env.FRONTEND_URL, "https://morangojoyas.cl"];
 
         // Allow requests with no origin (e.g., Postman, cURL)
         if (!origin || whitelist.includes(origin)) {
@@ -11,5 +11,5 @@ export const corsConfig: CorsOptions = {
             callback(new Error("Not allowed by CORS"));
         }
     },
-    credentials: true, // Optional: allow cookies if needed
+    credentials: true, // Allow cookies
 };

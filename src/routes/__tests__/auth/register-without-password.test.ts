@@ -125,7 +125,7 @@ describe("createCheckoutAccount Request Handler Tests", () => {
             .expect(201)
 
         const user = response.body.user; 
-            
+        console.log(user)
 
         // Expect new user info to be equal to request body info
         expect(user.confirmed).toEqual(false); 

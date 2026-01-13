@@ -15,6 +15,13 @@ const router = Router();
 // Sort by: createdAt, basePrice, name (A-Z)
 router.get("/",
     currentUser,  
+    query('search')
+        .optional()
+        .isString()
+        .trim()
+        .isLength({ min: 2, max: 50 })
+        .matches(/^[a-zA-Z0-9@._\- ]+$/)
+        .withMessage('Parámetro de búsqueda inválido'),
     query("productType")
         .optional()
         .isIn(Object.values(ProductTypes)).withMessage("Tipo de producto inválido"),
