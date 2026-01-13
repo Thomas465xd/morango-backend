@@ -214,7 +214,7 @@ const orderSchema : Schema = new Schema(
         }, 
         trackingNumber: {
             type: String, 
-            required: false, 
+            required: true, 
             trim: true, 
         }, 
         subtotal: {
