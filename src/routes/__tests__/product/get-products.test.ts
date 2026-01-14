@@ -15,6 +15,31 @@ describe("Input Validation Tests", () => {
         expect(response.body.errors[0].field).toEqual("productType");
     }) 
 
+    it("Returns a 400 with invalid search query param (larger than 50 characters or lower than 2)", async () => {
+        const admin = await global.createUser(true, true); 
+
+        const search1 = "a"
+        const search2 = "a".repeat(52)
+
+        const r1 = await request(server)
+            .get(`/api/products?search=${search1}`)
+            .send()
+            .set("Cookie", global.setCookie(admin.id))
+            .expect(400)
+
+        expect(r1.body.errors[0].field).toEqual("search")
+        expect(r1.body.errors.length).toEqual(1)
+
+        const r2 = await request(server)
+            .get(`/api/products?search=${search2}`)
+            .send()
+            .set("Cookie", global.setCookie(admin.id))
+            .expect(400)
+
+        expect(r2.body.errors[0].field).toEqual("search")
+        expect(r2.body.errors.length).toEqual(1)
+    })
+
     it("Returns a 400 with invalid tags in query param (?tags=)", async () => {
         // This will be converted to ["", "", ""] so it will throw since it's empty
         const tags = ",,," // Should be strings and formed like ?tags=gold,red,elegant or ?tags=gold&tags=red
@@ -126,7 +151,7 @@ describe("Input Validation Tests", () => {
 })
 
 describe("getProducts Request Handler Tests", () => {
-    it("Returns a 200 for a successful wells estructured response", async () => {
+    it("Returns a 200 for a successful well structured response with filtering", async () => {
         await global.createProduct({ category: "collares", isActive: true, basePrice: 10000 })
         await global.createProduct({ category: "aros", isActive: false, basePrice: 25000 })
         await global.createProduct({ category: "pulseras", isActive: true, basePrice: 30000})
@@ -155,7 +180,9 @@ describe("getProducts Request Handler Tests", () => {
         expect(response.body.perPage).toEqual(10);  // Since not provided
         expect(response.body.currentPage).toEqual(1); 
         expect(response.body.filters).toStrictEqual({
+            search: null,
             productType: null,
+            isActive: true,
             category: 'collares',
             priceRange: { min: '20000', max: '50000' },
             tags: null,
@@ -194,7 +221,9 @@ describe("getProducts Request Handler Tests", () => {
         expect(response.body.perPage).toEqual(3);  // Since not provided
         expect(response.body.currentPage).toEqual(1); 
         expect(response.body.filters).toStrictEqual({
+            search: null,
             productType: null,
+            isActive: true,
             category: null,
             priceRange: null,
             tags: null,
@@ -217,7 +246,7 @@ describe("getProducts Request Handler Tests", () => {
             .send() 
             .expect(200)
 
-        console.log(response.body)
+        //console.log(response.body)
 
         // Response format expectations
         expect(response.body.products.length).toEqual(4) // Since only 3 products have those matching tags (blue OR yellow)
@@ -233,11 +262,56 @@ describe("getProducts Request Handler Tests", () => {
         expect(response.body.perPage).toEqual(6);  // Since not provided
         expect(response.body.currentPage).toEqual(1); 
         expect(response.body.filters).toStrictEqual({
+            search: null,
             productType: null,
+            isActive: true,
             category: null,
             priceRange: null,
             tags: [ 'yellow', 'blue' ],
-            onSale: false, // Should be now true
+            onSale: false,
+            sortBy: 'name',
+            sortOrder: 'asc'
+        })
+    }) 
+
+    it("Returns a 200 for good 'search' query param behaviour", async () => {
+        await global.createProduct({ name: "Anillo de Compromiso Diamante", description: "Hermoso anillo de compromiso con Diamante"});
+        await global.createProduct({ name: "Collar de oro", description: "Collar de oro minimalista elegante"}); // ✅ 3.
+        await global.createProduct({ name: "Collar de oro casual", description: "Collar de oro perfecto para juntas casuales"}); // ✅ 1.
+        await global.createProduct({ name: "Aros de oro con incrustaciones de Diamante", description: "Aros de oro elegantes con incrustaciones de Diamante"});
+        await global.createProduct({ name: "Pulsera de Diamante", description: "Vistosa pulsera de diamante casual"}); // ✅ 4.
+        await global.createProduct({ name: "Collar de Diamante", description: "Hermoso collar de diamante casual"}); // ✅ 2.
+
+        const search = "Collar Casual"
+
+        const response = await request(server)
+            .get(`/api/products?page=1&perPage=6&search=${search}&sortBy=name&sortOrder=asc&isActive=true`)
+            .send() 
+            .expect(200)
+
+        //console.log(response.body)
+
+        // Response format expectations
+        expect(response.body.products.length).toEqual(4) // Since only 3 products have those matching tags (blue OR yellow)
+
+        // This attributes are added to the response in the controller using the enrichProducts function in /utils/product.ts
+        expect(response.body.products[0].finalPrice).toEqual(20000)
+        expect(response.body.products[0].hasActiveDiscount).toEqual(false)
+        expect(response.body.products[0].savings).toEqual(0)
+        expect(response.body.products[0].availableStock).toEqual(8)
+
+        expect(response.body.totalProducts).toEqual(4) // Only 3 should match the criteria
+        expect(response.body.totalPages).toEqual(1)
+        expect(response.body.perPage).toEqual(6);  // Since not provided
+        expect(response.body.currentPage).toEqual(1); 
+        expect(response.body.filters).toStrictEqual({
+            search: "Collar Casual",
+            productType: null,
+            isActive: true,
+            category: null,
+            priceRange: null,
+            tags: null,
+            onSale: false,
             sortBy: 'name',
             sortOrder: 'asc'
         })

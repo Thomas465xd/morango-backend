@@ -2,8 +2,9 @@ import type { Request, Response } from "express";
 import Product from "../models/Product";
 import { NotFoundError } from "../errors/not-found";
 import { AllowedProductAttributes } from "../types/validators";
-import { enrichProducts } from "../utils/product";
+import { enrichProduct, enrichProducts } from "../utils/product";
 import { formatLean } from "../utils/json";
+import { RequestConflictError } from "../errors/conflict-error";
 
 
 export class ProductController {
@@ -19,9 +20,32 @@ export class ProductController {
         // Search Filters
         const filters: any = {};
 
-        //* Only search products that are active
-        if(isActive) {
+        //* Search by email or name | use text index or regex 
+        // Normalize search param
+        const rawSearch = req.query.search;
+        const search =
+            typeof rawSearch === "string" ? rawSearch.trim() : "";
+
+        if (search) {
+            if (search.length >= 3) {
+                filters.$text = { $search: search };
+            } else {
+                filters.$or = [
+                    { name: { $regex: search, $options: "i" } },
+                    { description: { $regex: search, $options: "i" } },
+                ];
+            }
+        }
+
+        // Project score | tells mongo to compute & expose text relevance score
+        // this is required for sorting by score
+        const projection = search.length >= 3 ? { score: { $meta: "textScore" } } : {};
+
+        //* Only search products that are active or inactive. If not set return both
+        if(isActive === "true") {
             filters.isActive = true 
+        } else if (isActive === "false") {
+            filters.isActive = false
         }
 
         //* ?productType="ProductTypes"
@@ -80,10 +104,12 @@ export class ProductController {
         const sortBy = req.query.sortBy as string 
         const sortOrder: 1 | -1 = req.query.sortOrder === "asc" ? 1 : -1;
 
-        let sort : Record<string, 1 | -1> = { createdAt: -1 } // default sorting criteria
+        let sort : Record<string, 1 | -1 | { $meta: "textScore" }> = { createdAt: -1 } // default sorting criteria
 
         //? Sorting options
-        if (sortBy === "basePrice" || sortBy === "price") {
+        if (search.length >= 3) {
+            sort = { score: { $meta: "textScore" } }
+        } else if (sortBy === "basePrice" || sortBy === "price") {
             sort = { basePrice: sortOrder }; 
         } else if (sortBy === "name") {
             sort = { name: sortOrder };
@@ -96,7 +122,7 @@ export class ProductController {
 
         //* Sort products by createdAt, basePrice & name
         // Fetch the products for the current page with pagination
-        const products = await Product.find(filters) 
+        const products = await Product.find(filters, projection) 
             .skip(skip)
             .limit(limit)
             .sort(sort) // Sort by createdAt in descending product
@@ -109,13 +135,15 @@ export class ProductController {
         const totalPages = Math.ceil(totalProducts / perPage);
 
         res.status(200).json({ 
-            products: productsWithPrices, 
+            products: productsWithPrices.map(formatLean), 
             totalProducts,
             totalPages, 
             perPage, 
             currentPage: page, 
             filters: {
+                search: search || null,
                 productType: productType || null,
+                isActive: Boolean(isActive),
                 category: category || null,
                 priceRange: minPrice || maxPrice ? { min: minPrice, max: maxPrice } : null,
                 tags: parsedTags || null,
@@ -196,8 +224,10 @@ export class ProductController {
             .sort({ name: 1 })
             .lean(); 
 
+        const enrichedProducts = enrichProducts(products)
+
         res.status(200).json({
-            products: products.map(formatLean), 
+            products: enrichedProducts.map(formatLean), 
             totalProducts, 
             totalPages, 
             perPage,
@@ -209,8 +239,9 @@ export class ProductController {
     //* Get Product by ID
     static getProductById = async (req: Request, res: Response) => {
         const { productId } = req.params; 
+        console.log(productId)
 
-        const product = await Product.findById(productId); 
+        const product = await Product.findById(productId).lean(); 
         if (!product) {
             throw new NotFoundError("Producto no encontrado");
         }
@@ -225,34 +256,18 @@ export class ProductController {
                 { tags: { $in: product.tags } } // Shared tags
             ]
         })
-        .select('name description basePrice discount images productType category tags') // Select only needed fields
         .limit(6) // Limit to 6 related products
         .lean(); // Return plain JS objects for better performance
 
-        //! Calculate finalPrice for related products
+        //! Enrich related products data
+        const enrichedProduct = enrichProduct(product); 
         const relatedProductsWithPrices = enrichProducts(relatedProducts); 
-
-        // Calculate finalPrice and available stock for main product
-        const productData = product.toObject();
-        const hasActiveDiscount = product.isDiscountValid();
         
         res.status(200).json({
-            ...productData,
-            finalPrice: product.finalPrice,
-            hasActiveDiscount,
-            savings: hasActiveDiscount ? product.basePrice - product.finalPrice : 0,
-            availableStock: product.stock - product.reserved,
-            relatedProducts: relatedProductsWithPrices
+            product: formatLean(enrichedProduct),
+            relatedProducts: relatedProductsWithPrices.map(formatLean),
         });
     }
-
-    //TODO Check Stock Availability | before checkout to validate cart
-    // static validateStock = async (req: Request, res: Response) => {
-
-    //     res.status(200).json({
-    //         message: "Stock Validated"
-    //     })
-    // }
 
     //^ Create new Product
     static createProduct = async (req: Request, res: Response) => {
@@ -295,6 +310,7 @@ export class ProductController {
     //? Update Product | Without setting discounts
     static updateProduct = async (req: Request, res: Response) => {
         const { productId } = req.params;
+        const { stock } = req.body; 
 
         const product = await Product.findById(productId);
         if (!product) {
@@ -319,6 +335,13 @@ export class ProductController {
             if (req.body[field] !== undefined) {
                 updates[field] = req.body[field];
             }
+        }
+
+        // Validate stock if being updated
+        if (updates.stock !== undefined && updates.stock < product.reserved) {
+            throw new RequestConflictError(
+                `No puedes establecer el stock en ${updates.stock} porque hay ${product.reserved} unidades reservadas en órdenes pendientes`
+            );
         }
 
         const effectiveProductType =

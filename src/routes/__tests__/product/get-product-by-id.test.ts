@@ -45,7 +45,7 @@ describe("getProductById Request Handler Tests", () => {
             .send()
             .expect(200)
         
-        //console.log(response.body)
+        console.log(response.body)
 
         const { 
             name, 
@@ -63,8 +63,7 @@ describe("getProductById Request Handler Tests", () => {
             hasActiveDiscount, 
             savings, 
             availableStock, 
-            relatedProducts
-        } = response.body; 
+        } = response.body.product; 
 
         expect(name).toEqual("Collar Test")
         expect(description).toEqual("Descripción Test")
@@ -79,10 +78,9 @@ describe("getProductById Request Handler Tests", () => {
         expect(Object.keys(attributes).length).toEqual(4)
         expect(finalPrice).toEqual(20000)
         expect(hasActiveDiscount).toEqual(false)
-
-        // Attributes returned by the request handler
         expect(savings).toEqual(0) // Base Price - Final Price only if discount is present
         expect(availableStock).toEqual(8) // stock - reserved
-        expect(relatedProducts.length).toEqual(2) // The other two created products
+
+        expect(response.body.relatedProducts.length).toEqual(2) // The other two created products
     })
 })

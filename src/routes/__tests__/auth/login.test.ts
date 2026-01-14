@@ -7,7 +7,7 @@ jest.mock("../../../utils/jwt", () => ({
 
 import request from "supertest"
 import server from "../../../server"
-import { generateAdminJWT, generateConfirmationToken, generateJWT } from "../../../utils/jwt"
+import { generateConfirmationToken, generateJWT } from "../../../utils/jwt"
 import resend from "../../../config/resend";
 
 //? 📋 Input Validation Tests
@@ -109,6 +109,6 @@ describe("login Request Handler Tests", () => {
             .expect(200)
 
         expect(response.get("Set-Cookie")).toBeDefined(); 
-        expect(generateAdminJWT).toHaveBeenCalled(); 
+        expect(generateJWT).toHaveBeenCalled(); 
     })
 })
