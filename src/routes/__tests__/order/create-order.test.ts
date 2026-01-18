@@ -18,88 +18,18 @@ describe("POST /api/orders Input Validation Tests", () => {
         await request(server)
             .post(`/api/orders`)
             .send({ 
-                customer: {
-                    userId: "", 
-                    email: "", 
-                    name: "", 
-                    surname: "", 
-                    phone: "", 
-                    isGuest: ""
-                }, 
-                shippingAddress: {
-                    country: "", 
-                    region: "", 
-                    city: "", 
-                    cityArea: "", 
-                    street: "", 
-                    reference: "", // Optional
-                    zipCode: "" // Optional
-                }, 
                 items: [{
                     productId: "", 
                     quantity: ""
                 }], 
-                shipping: "", 
-                saveData: ""
             })
             .expect(400)
-    })
-
-    it("Returns a 400 with invalid customer userId", async () => {
-        const response = await request(server)
-            .post(`/api/orders`)
-            .send({ 
-                customer: {
-                    userId: "invalid_id", 
-                    email: "test@test.com", 
-                    name: "Thomas", 
-                    surname: "Schrödinger", 
-                    phone: "993128902", 
-                    isGuest: true
-                }, 
-                shippingAddress: {
-                    country: "Chile", 
-                    region: "Metropolitana de Santiago", 
-                    city: "Santiago", 
-                    cityArea: "Las Condes", 
-                    street: "Manor Street 1234", 
-                    reference: "", // Optional
-                    zipCode: "" // Optional
-                }, 
-                items: [{
-                    productId: new mongoose.Types.ObjectId, 
-                    quantity: 1
-                }], 
-                shipping: 5990, 
-                saveData: true
-            })
-            .expect(400)
-
-        expect(response.body.errors.length).toEqual(1); 
-        expect(response.body.errors[0].field).toEqual('customer.userId')
     })
 
     it("Returns a 400 with invalid items productId", async () => {
         const response = await request(server)
             .post(`/api/orders`)
             .send({ 
-                customer: {
-                    userId: new mongoose.Types.ObjectId, 
-                    email: "test@test.com", 
-                    name: "Thomas", 
-                    surname: "Schrödinger", 
-                    phone: "993128902", 
-                    isGuest: true
-                }, 
-                shippingAddress: {
-                    country: "Chile", 
-                    region: "Metropolitana de Santiago", 
-                    city: "Santiago", 
-                    cityArea: "Las Condes", 
-                    street: "Manor Street 1234", 
-                    reference: "", // Optional
-                    zipCode: "" // Optional
-                }, 
                 items: [
                     {
                         productId: new mongoose.Types.ObjectId, 
@@ -110,8 +40,6 @@ describe("POST /api/orders Input Validation Tests", () => {
                         quantity: 2
                     }
                 ], 
-                shipping: 5990, 
-                saveData: true
             })
             .expect(400)
 
@@ -119,187 +47,10 @@ describe("POST /api/orders Input Validation Tests", () => {
         expect(response.body.errors[0].field).toEqual('items[1].productId')
     })
 
-    it("Returns a 400 with invalid customer email", async () => {
-        const response = await request(server)
-            .post(`/api/orders`)
-            .send({ 
-                customer: {
-                    userId: new mongoose.Types.ObjectId, 
-                    email: "invalid_email", 
-                    name: "Thomas", 
-                    surname: "Schrödinger", 
-                    phone: "993128902", 
-                    isGuest: true
-                }, 
-                shippingAddress: {
-                    country: "Chile", 
-                    region: "Metropolitana de Santiago", 
-                    city: "Santiago", 
-                    cityArea: "Las Condes", 
-                    street: "Manor Street 1234", 
-                    reference: "", // Optional
-                    zipCode: "" // Optional
-                }, 
-                items: [
-                    {
-                        productId: new mongoose.Types.ObjectId, 
-                        quantity: 1
-                    }, 
-                    {
-                        productId: new mongoose.Types.ObjectId, 
-                        quantity: 2
-                    }
-                ], 
-                shipping: 5990, 
-                saveData: true
-            })
-            .expect(400)
-
-        expect(response.body.errors.length).toEqual(1); 
-        expect(response.body.errors[0].field).toEqual('customer.email')
-    })
-
-    it("Returns a 400 with invalid customer phone (not in +56 9 1234 5678 or 912346789 format)", async () => {
-        const response = await request(server)
-            .post(`/api/orders`)
-            .send({ 
-                customer: {
-                    userId: new mongoose.Types.ObjectId, 
-                    email: "test@test.com", 
-                    name: "Thomas", 
-                    surname: "Schrödinger", 
-                    phone: "++1234++", 
-                    isGuest: true
-                }, 
-                shippingAddress: {
-                    country: "Chile", 
-                    region: "Metropolitana de Santiago", 
-                    city: "Santiago", 
-                    cityArea: "Las Condes", 
-                    street: "Manor Street 1234", 
-                    reference: "", // Optional
-                    zipCode: "" // Optional
-                }, 
-                items: [
-                    {
-                        productId: new mongoose.Types.ObjectId, 
-                        quantity: 1
-                    }, 
-                    {
-                        productId: new mongoose.Types.ObjectId, 
-                        quantity: 2
-                    }
-                ], 
-                shipping: 5990, 
-                saveData: true
-            })
-            .expect(400)
-
-        expect(response.body.errors.length).toEqual(1); 
-        expect(response.body.errors[0].field).toEqual('customer.phone')
-    })
-
-    it("Returns a 400 with invalid isGuest provided (not boolean)", async () => {
-        const response = await request(server)
-            .post(`/api/orders`)
-            .send({ 
-                customer: {
-                    userId: new mongoose.Types.ObjectId, 
-                    email: "test@test.com", 
-                    name: "Thomas", 
-                    surname: "Schrödinger", 
-                    phone: "912346789", 
-                    isGuest: "yes"
-                }, 
-                shippingAddress: {
-                    country: "Chile", 
-                    region: "Metropolitana de Santiago", 
-                    city: "Santiago", 
-                    cityArea: "Las Condes", 
-                    street: "Manor Street 1234", 
-                    reference: "", // Optional
-                    zipCode: "" // Optional
-                }, 
-                items: [
-                    {
-                        productId: new mongoose.Types.ObjectId, 
-                        quantity: 1
-                    }, 
-                    {
-                        productId: new mongoose.Types.ObjectId, 
-                        quantity: 2
-                    }
-                ], 
-                shipping: 5990, 
-                saveData: true
-            })
-            .expect(400)
-
-        expect(response.body.errors.length).toEqual(1); 
-        expect(response.body.errors[0].field).toEqual('customer.isGuest')
-    })
-
-    it("Returns a 400 with invalid shippingAddress region (not inside Regions enum)", async () => {
-        const response = await request(server)
-            .post(`/api/orders`)
-            .send({ 
-                customer: {
-                    userId: new mongoose.Types.ObjectId, 
-                    email: "test@test.com", 
-                    name: "Thomas", 
-                    surname: "Schrödinger", 
-                    phone: "912346789", 
-                    isGuest: true
-                }, 
-                shippingAddress: {
-                    country: "Chile", 
-                    region: "Metropolitana", // Should be "Metropolitana de Santiago"
-                    city: "Santiago", 
-                    cityArea: "Las Condes", 
-                    street: "Manor Street 1234", 
-                    reference: "", // Optional
-                    zipCode: "" // Optional
-                }, 
-                items: [
-                    {
-                        productId: new mongoose.Types.ObjectId, 
-                        quantity: 1
-                    }, 
-                    {
-                        productId: new mongoose.Types.ObjectId, 
-                        quantity: 2
-                    }
-                ], 
-                shipping: 5990, 
-                saveData: true
-            })
-            .expect(400)
-
-        expect(response.body.errors.length).toEqual(1); 
-        expect(response.body.errors[0].field).toEqual('shippingAddress.region')
-    })
-
     it("Returns a 400 with invalid items quantity (negative)", async () => {
         const response = await request(server)
             .post(`/api/orders`)
             .send({ 
-                customer: {
-                    userId: new mongoose.Types.ObjectId, 
-                    email: "test@test.com", 
-                    name: "Thomas", 
-                    surname: "Schrödinger", 
-                    phone: "912346789", 
-                    isGuest: true
-                }, 
-                shippingAddress: {
-                    country: "Chile", 
-                    region: "Metropolitana de Santiago", // Should be "Metropolitana de Santiago"
-                    city: "Santiago", 
-                    cityArea: "Las Condes", 
-                    street: "Manor Street 1234", 
-                    reference: "", // Optional
-                    zipCode: "" // Optional
-                }, 
                 items: [
                     {
                         productId: new mongoose.Types.ObjectId, 
@@ -310,94 +61,12 @@ describe("POST /api/orders Input Validation Tests", () => {
                         quantity: -2
                     }
                 ], 
-                shipping: 5990, 
-                saveData: true
             })
             .expect(400)
 
         expect(response.body.errors.length).toEqual(2); 
         expect(response.body.errors[0].field).toEqual('items[0].quantity')
         expect(response.body.errors[1].field).toEqual('items[1].quantity')
-    })
-
-    it("Returns a 400 with invalid shipping cost value (negative)", async () => {
-        const response = await request(server)
-            .post(`/api/orders`)
-            .send({ 
-                customer: {
-                    userId: new mongoose.Types.ObjectId, 
-                    email: "test@test.com", 
-                    name: "Thomas", 
-                    surname: "Schrödinger", 
-                    phone: "912346789", 
-                    isGuest: true
-                }, 
-                shippingAddress: {
-                    country: "Chile", 
-                    region: "Metropolitana de Santiago",
-                    city: "Santiago", 
-                    cityArea: "Las Condes", 
-                    street: "Manor Street 1234", 
-                    reference: "", // Optional
-                    zipCode: "" // Optional
-                }, 
-                items: [
-                    {
-                        productId: new mongoose.Types.ObjectId, 
-                        quantity: 1
-                    }, 
-                    {
-                        productId: new mongoose.Types.ObjectId, 
-                        quantity: 2
-                    }
-                ], 
-                shipping: -5990, 
-                saveData: true
-            })
-            .expect(400)
-
-        expect(response.body.errors.length).toEqual(1); 
-        expect(response.body.errors[0].field).toEqual('shipping')
-    })
-
-    it("Returns a 400 with invalid saveData (not boolean)", async () => {
-        const response = await request(server)
-            .post(`/api/orders`)
-            .send({ 
-                customer: {
-                    userId: new mongoose.Types.ObjectId, 
-                    email: "test@test.com", 
-                    name: "Thomas", 
-                    surname: "Schrödinger", 
-                    phone: "912346789", 
-                    isGuest: true
-                }, 
-                shippingAddress: {
-                    country: "Chile", 
-                    region: "Metropolitana de Santiago",
-                    city: "Santiago", 
-                    cityArea: "Las Condes", 
-                    street: "Manor Street 1234", 
-                    reference: "", // Optional
-                    zipCode: "" // Optional
-                }, 
-                items: [
-                    {
-                        productId: new mongoose.Types.ObjectId, 
-                        quantity: 1
-                    }, 
-                    {
-                        productId: new mongoose.Types.ObjectId, 
-                        quantity: 2
-                    }
-                ], 
-                shipping: 5990, 
-                saveData: "yes"
-            })
-            .expect(400)
-
-        expect(response.body.errors.length).toEqual(1); 
-        expect(response.body.errors[0].field).toEqual('saveData')
     })
 }) 
 
@@ -412,22 +81,6 @@ describe("createOrder Request Handler Tests", () => {
             .post(`/api/orders`)
             .set("Cookie", global.setCookie(user.id))
             .send({ 
-                customer: {
-                    email: "test@test.com", 
-                    name: "Thomas", 
-                    surname: "Schrödinger", 
-                    phone: "912346789", 
-                    isGuest: true
-                }, 
-                shippingAddress: {
-                    country: "Chile", 
-                    region: "Metropolitana de Santiago",
-                    city: "Santiago", 
-                    cityArea: "Las Condes", 
-                    street: "Manor Street 1234", 
-                    reference: "", // Optional
-                    zipCode: "" // Optional
-                }, 
                 items: [
                     {
                         productId: firstProduct.id, 
@@ -442,8 +95,6 @@ describe("createOrder Request Handler Tests", () => {
                         quantity: 2
                     }
                 ], 
-                shipping: 5990, 
-                saveData: true
             })
             .expect(409)
 
@@ -461,22 +112,6 @@ describe("createOrder Request Handler Tests", () => {
             .post(`/api/orders`)
             .set("Cookie", global.setCookie(user.id))
             .send({ 
-                customer: {
-                    email: "test@test.com", 
-                    name: "Thomas", 
-                    surname: "Schrödinger", 
-                    phone: "912346789", 
-                    isGuest: true
-                }, 
-                shippingAddress: {
-                    country: "Chile", 
-                    region: "Metropolitana de Santiago",
-                    city: "Santiago", 
-                    cityArea: "Las Condes", 
-                    street: "Manor Street 1234", 
-                    reference: "", // Optional
-                    zipCode: "" // Optional
-                }, 
                 items: [
                     {
                         productId: firstProduct.id, 
@@ -491,16 +126,13 @@ describe("createOrder Request Handler Tests", () => {
                         quantity: 4
                     }
                 ], 
-                shipping: 5990, 
-                saveData: true
             })
             .expect(409)
 
         expect(response.body.errors[0].message).toEqual('Stock insuficiente para algunos productos')
     })
 
-    // TODO: Test payment flow startup
-    it("Returns a 201 if order is created successfully along with payment flow activation", async () => {
+    it("Returns a 201 if draft order is created successfully", async () => {
         const user = await global.createUser(true, false); 
         
         const firstProduct = await global.createProduct({ stock: 5 }); 
@@ -511,22 +143,6 @@ describe("createOrder Request Handler Tests", () => {
             .post(`/api/orders`)
             .set("Cookie", global.setCookie(user.id))
             .send({ 
-                customer: {
-                    email: "test@test.com", 
-                    name: "Thomas", 
-                    surname: "Schrödinger", 
-                    phone: "912346789", 
-                    isGuest: true
-                }, 
-                shippingAddress: {
-                    country: "Chile", 
-                    region: "Metropolitana de Santiago",
-                    city: "Santiago", 
-                    cityArea: "Las Condes", 
-                    street: "Manor Street 1234", 
-                    reference: "", // Optional
-                    zipCode: "" // Optional
-                }, 
                 items: [
                     {
                         productId: firstProduct.id, 
@@ -541,40 +157,15 @@ describe("createOrder Request Handler Tests", () => {
                         quantity: 1
                     }
                 ], 
-                shipping: 5990, 
-                saveData: true
             })
             .expect(201)
 
         expect(response.body.order).toBeDefined(); 
 
-        const { 
-            customer, 
-            shippingAddress, 
-            subtotal, 
-            shipping, 
-            total, 
-            id
-        } = response.body.order; 
+        const order = await Order.findById(response.body.order.id).lean();
 
-        const order = await Order.findById(id).lean();
-        console.log(order)
-
-        expect(order.customer).toMatchObject({
-            email: customer.email,
-            name: customer.name,
-            surname: customer.surname,
-            phone: customer.phone,
-            isGuest: customer.isGuest
-        });
-
-        expect(order.customer.userId.toString()).toBe(customer.userId);
-        expect(order.shippingAddress).toEqual(shippingAddress);
         expect(order.status).toEqual(OrderStatus.Pending); 
         expect(order.trackingNumber).toBeDefined(); 
-        expect(order.subtotal).toEqual(subtotal); 
-        expect(order.shipping).toEqual(shipping);
-        expect(order.total).toEqual(total); 
         expect(order.stockReservedAt).toBeInstanceOf(Date);
         expect(order.stockReservedAt.getTime()).not.toBeNaN();
         expect(order.stockReservationExpiresAt).toBeInstanceOf(Date);
@@ -600,30 +191,12 @@ describe("createOrder Request Handler Tests", () => {
             .post(`/api/orders`)
             .set("Cookie", global.setCookie(user.id))
             .send({ 
-                customer: {
-                    email: "test@test.com", 
-                    name: "Thomas", 
-                    surname: "Schrödinger", 
-                    phone: "912346789"
-                }, 
-                shippingAddress: {
-                    country: "Chile", 
-                    region: "Metropolitana de Santiago",
-                    city: "Santiago", 
-                    cityArea: "Las Condes", 
-                    street: "Manor Street 1234", 
-                    reference: "", // Optional
-                    zipCode: "" // Optional
-                }, 
                 items: [
                     {
                         productId: product.id, 
                         quantity: 1
                     }
                 ], 
-                shipping: 5990,
-                shippingMethod: "santiago", // ✅ Add this (required field)
-                saveData: true
             })
             .expect(201);
 
