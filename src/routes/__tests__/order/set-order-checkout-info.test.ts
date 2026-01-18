@@ -6,7 +6,7 @@ import Order, { OrderStatus } from "../../../models/Order";
 import { expireOrdersJob } from "../../../cron/expireOrders";
 
 //? 📋 Input Validation Tests
-describe("PATCh /api/orders/checkout/:orderId Input Validation Tests", () => {
+describe("PATCH /api/orders/checkout/:orderId Input Validation Tests", () => {
     it("Returns a 400 with invalid :orderId in request params", async () => {
         const r1 = await request(server)
             .patch(`/api/orders/checkout/asdf`)
