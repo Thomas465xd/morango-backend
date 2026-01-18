@@ -203,6 +203,15 @@ export class PaymentController {
             throw new RequestConflictError("Orden Expirada")
         }
 
+        // Verify Order info is set for checkout 
+        if(!order.customer.email || !order.shippingAddress.region || !order.shipping || !order.shippingMethod) {
+            throw new RequestConflictError("Faltan datos en la Orden")
+        }
+
+        if (order.stockReservationExpiresAt < new Date()) {
+            throw new RequestConflictError("La orden ha expirado");
+        }
+
         // Build items for MP
         const items = order.items.map(item => ({
             id: item.productId.toString(),
@@ -224,7 +233,7 @@ export class PaymentController {
                     surname: order.customer.surname,
                     email: order.customer.email,
                     phone: {
-                        number: order.customer.phone
+                        number: order.customer.phone ? order.customer.phone : undefined
                     }
                 },
                 back_urls: {

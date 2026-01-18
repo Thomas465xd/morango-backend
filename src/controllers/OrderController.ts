@@ -273,11 +273,8 @@ export class OrderController {
 
     //^ POST - Create Order
     static createOrder = async (req: Request, res: Response) => {
-        // Get user ID if logged in (undefined for guest checkout)
-        const userId = req.user?.id; 
-
         // Destructure request body elements
-        const { customer, shippingAddress, items, shipping, saveData } = req.body; 
+        const { items } = req.body; 
 
         //! Validaate all products exists and are active
 
@@ -349,7 +346,7 @@ export class OrderController {
     
             // Calculate totals
             const subtotal = orderItems.reduce((sum, item) => sum + item.itemTotal, 0);
-            const total = subtotal + shipping;
+            const total = subtotal + 0; // shipping value yet to be added
     
             // Generate unique order number
             const trackingNumber = await generateOrderNumber(); 
@@ -359,20 +356,9 @@ export class OrderController {
     
             const order = await Order.build({
                 trackingNumber,
-                customer: {
-                    userId: userId || null,
-                    email: customer.email,
-                    name: customer.name,
-                    surname: customer.surname,
-                    phone: customer.phone,
-                    isGuest: !userId
-                },
-                shippingAddress,
                 items: orderItems,
                 subtotal,
-                shipping,
                 total,
-                saveData: saveData && !userId, // Only for guests
                 stockReservedAt: new Date(),
                 stockReservationExpiresAt: expirationTime
             });
@@ -409,11 +395,58 @@ export class OrderController {
                 // create the payment preference. 
             });
         } catch (error) {
+                        console.log(error)
             await session.abortTransaction();
             throw error;
         } finally {
             session.endSession();
         }
+    }
+
+    //? PATCH - Set/Update order checkout information before payment
+    static setOrderCheckoutInfo = async (req: Request, res: Response) => {
+        // Get user ID if logged in (undefined for guest checkout)
+        const userId = req.user?.id; 
+
+        // Destructure order ID from query params
+        const { orderId } = req.params; 
+
+        // Destructure request body elements
+        const { customer, shippingAddress, shipping, shippingMethod, saveData } = req.body; 
+
+        const order = await Order.findById(orderId); 
+
+        if (!order) {
+            throw new NotFoundError("Orden no encontrada");
+        }
+
+        if (order.status !== OrderStatus.Pending) {
+            throw new RequestConflictError("La orden ya no puede ser modificada");
+        }
+
+        if (order.stockReservationExpiresAt < new Date()) {
+            throw new RequestConflictError("La orden ha expirado");
+        }
+
+        // attach checkout info
+        order.customer = {
+            ...customer,
+            userId: userId || null,
+            isGuest: !userId,
+        };
+
+        order.shippingAddress = shippingAddress;
+        order.shipping = shipping;
+        order.shippingMethod = shippingMethod; 
+        order.total = order.subtotal + shipping;
+        order.saveData = saveData && !userId;
+
+        await order.save(); 
+
+        res.status(200).json({
+            message: "Orden registrada Correctamente. Esperando pago.",
+            order
+        });
     }
 
     //? USER - Cancel order before payment, do not send notification email, only allowed if "Esperando Pago"

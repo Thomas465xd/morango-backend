@@ -78,17 +78,17 @@ export interface OrderInterface extends Document {
 // Attributes interface = what you must provide to create a order
 export interface OrderAttrs {
     trackingNumber: string
-    customer: Customer 
-    shippingAddress: Address 
+    customer?: Customer 
+    shippingAddress?: Address 
     items: Item[]
     subtotal: number 
-    shipping: number 
+    shipping?: number 
     shippingMethod?: string
     total: number 
     paymentId?: Types.ObjectId // Needs to be set after Payment Creation
     stockReservedAt?: Date
     stockReservationExpiresAt: Date 
-    saveData: boolean, 
+    saveData?: boolean, 
 }
 
 // Model interface = adds a build method that uses OrderAttrs
@@ -102,61 +102,58 @@ const orderSchema : Schema = new Schema(
     {
         customer: {
             userId: {
-                type: Schema.Types.ObjectId, 
-                required: false, 
-                default: null, 
-                ref: "User", 
+                type: Schema.Types.ObjectId,
+                ref: "User",
+                default: null,
             },
             email: {
-                type: String, 
-                required: true, 
-                ref: "User"
-            }, 
+                type: String,
+                required: false,
+            },
             name: {
-                type: String, 
-                required: true, 
-                trim: true, 
+                type: String,
+                required: false,
+                trim: true,
             },
             surname: {
-                type: String, 
-                required: true, 
-                trim: true, 
-            }, 
+                type: String,
+                required: false,
+                trim: true,
+            },
             phone: {
-                type: String, 
-                requried: false, 
-                trim: true, 
+                type: String,
+                required: false,
+                trim: true,
             },
             isGuest: {
-                type: Boolean, 
-                default: true 
-            }, 
+                type: Boolean,
+                default: true,
+            },
         },
         shippingAddress: {
             country: {
                 type: String, 
-                required: true, 
                 trim: true, 
                 default: "Chile", 
             }, 
             region: {
                 type: String, 
-                required: true, 
+                required: false, 
                 enum: Regions, 
             }, 
             city: {
                 type: String, 
-                required: true, 
+                required: false, 
                 trim: true, 
             }, 
             cityArea: {
                 type: String, 
-                required: true, 
+                required: false, 
                 trim: true, 
             }, 
             street: {
                 type: String, 
-                required: true, 
+                required: false, 
                 trim: true, 
             }, 
             reference: {
@@ -224,13 +221,13 @@ const orderSchema : Schema = new Schema(
         }, 
         shipping: {
             type: Number,
-            required: true, 
+            required: false, 
             min: 0,
             default: 0, 
         }, 
         shippingMethod: {
             type: String, 
-            required: true,
+            required: false,
             default: "Por Definir...",  
             trim: true, 
         }, 

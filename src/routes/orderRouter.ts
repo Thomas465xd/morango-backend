@@ -5,6 +5,7 @@ import { currentUser, requireAdmin, requireAuth } from "../middleware/auth";
 import { OrderController } from "../controllers/OrderController";
 import { Regions } from "../models/User";
 import { OrderStatus } from "../models/Order";
+import { isString } from "util";
 
 const router = Router();
 
@@ -25,6 +26,38 @@ router.get("/public/:trackingNumber",
 // return availability status for each item,
 // order expiration time set by CRON job
 router.post("/",
+    // items must be a non-empty array
+    body("items")
+        .isArray({ min: 1 })
+        .withMessage("La orden debe contener al menos un producto"),
+
+    // productId
+    body("items.*.productId")
+        .notEmpty()
+        .withMessage("El ID del producto es obligatorio")
+        .isMongoId()
+        .withMessage("El ID del producto no es válido"),
+
+    // quantity
+    body("items.*.quantity")
+        .notEmpty()
+        .withMessage("La cantidad del producto no puede ir vacía")
+        .isInt({ min: 1 })
+        .withMessage("La cantidad debe ser al menos 1"),
+
+    currentUser,
+    handleInputErrors,
+    OrderController.createOrder
+);
+
+//? 3.- PATCH set Order Checkout Info
+// Sets the customer info and shipping address info 
+// Payment preference is only created when this info is set 
+router.patch("/checkout/:orderId", 
+    param("orderId")
+        .isMongoId().withMessage("ID de la orden Inválido")
+        .notEmpty().withMessage("El ID de la orden es Obligatorio"), 
+
     // OPTIONAL - customer.userId
     body("customer.userId")
         .optional()
@@ -82,25 +115,6 @@ router.post("/",
         .optional()
         .trim(),
 
-    // items must be a non-empty array
-    body("items")
-        .isArray({ min: 1 })
-        .withMessage("La orden debe contener al menos un producto"),
-
-    // productId
-    body("items.*.productId")
-        .notEmpty()
-        .withMessage("El ID del producto es obligatorio")
-        .isMongoId()
-        .withMessage("El ID del producto no es válido"),
-
-    // quantity
-    body("items.*.quantity")
-        .notEmpty()
-        .withMessage("La cantidad del producto no puede ir vacía")
-        .isInt({ min: 1 })
-        .withMessage("La cantidad debe ser al menos 1"),
-
     // shipping = costs will be predefined options in the frontend
     body("shipping")
         .notEmpty()
@@ -108,19 +122,25 @@ router.post("/",
         .isFloat({ min: 0 })
         .withMessage("El valor del envío debe ser mayor o igual a 0"),
 
+    body("shippingMethod")
+        .notEmpty()
+        .withMessage("El valor del envío no puede ir vacío")
+        .isString()
+        .withMessage("shippingMethod must be a string"),
+
     // saveData
     body("saveData")
         .notEmpty().withMessage("saveData needs to be send")
         .isBoolean().withMessage("saveData should be either true or false"), 
 
-    currentUser,
-    handleInputErrors,
-    OrderController.createOrder
-);
+    currentUser, 
+    handleInputErrors, 
+    OrderController.setOrderCheckoutInfo
+)
 
 //! 🔒 Admin Order Routes 🔒 !//
 
-//* 3.- Get All registered orders with filtering & sorting
+//* 4.- Get All registered orders with filtering & sorting
 // Filter by status, date range, customer email and order number. Allow sorting. 
 router.get("/admin", 
     currentUser, 
@@ -159,7 +179,7 @@ router.get("/admin",
     OrderController.getOrdersAdmin
 )
 
-//* 4.- Get a single order by it's id
+//* 5.- Get a single order by it's id
 // Full order info, customer details, payment details, stock reservation info
 router.get("/admin/:orderId", 
     currentUser, 
@@ -171,7 +191,7 @@ router.get("/admin/:orderId",
     OrderController.getOrderByIdAdmin
 )
 
-//? 5.- PATCH - Edit Order Status
+//? 6.- PATCH - Edit Order Status
 // Change order status manually, set deliveredAt when marking as delivered, prevent invalid status transitions
 // Cancel transition can be made in any status. Cancel status change releases order products stock
 router.patch("/admin/status/:orderId", 
@@ -191,7 +211,7 @@ router.patch("/admin/status/:orderId",
     OrderController.updateOrderStatus
 )
 
-//! 6.- DELETE - Delete order entirely
+//! 7.- DELETE - Delete order entirely
 router.delete("/admin/:orderId", 
     currentUser, 
     requireAdmin,
@@ -204,7 +224,7 @@ router.delete("/admin/:orderId",
 
 //* 🗣️ Auth User Order Management 🗣️ *//
 
-//* 7.- Get current authenticated user registered orders
+//* 8.- Get current authenticated user registered orders
 // pagination support, filter by status, sort by date (desc)
 router.get("/", 
     currentUser, 
@@ -225,7 +245,7 @@ router.get("/",
     OrderController.getAuthUserOrders
 )
 
-//* 8.- Get single order details authenticated
+//* 9.- Get single order details authenticated
 // User can only see their own orders, more detailed than public tracking, 
 // includes payment info 
 router.get("/:orderId", 
@@ -238,7 +258,7 @@ router.get("/:orderId",
     OrderController.getAuthUserOrderById
 )
 
-//? 9.- PATCH - Cancel order before payment | USER
+//? 10.- PATCH - Cancel order before payment | USER
 // Only allowed if status is "Esperando pago", release reserved stock,
 // cannot cancel after payment 
 router.patch("/cancel/:orderId", 
