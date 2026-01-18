@@ -76,6 +76,27 @@ router.get("/",
     ProductController.getProducts
 )
 
+//* Get Multiple Products by their Id's
+// Used for retrieving shopping cart products
+// e.g. /api/products/multiple?productIds=id-1&productIds=id2...
+router.get("/multiple",
+    currentUser,   
+    query("productIds")
+        .customSanitizer(value => {
+            if (Array.isArray(value)) return value;
+            return [value];
+        })
+        .notEmpty().withMessage("productIds no puede ir vacío")
+        .isArray({ min: 1, max: 100 })
+        .withMessage("productIds have to be an array with at least one ID"),
+
+    query("productIds.*")
+        .isMongoId()
+        .withMessage("ID del producto inválido"),
+    handleInputErrors,
+    ProductController.getProductsByIds
+)
+
 //* Get Products Categories with product count per category (List all unique categories) | Pagination
 // Returns array of available categories with product count per category
 router.get("/categories",
@@ -83,13 +104,6 @@ router.get("/categories",
     handleInputErrors,
     ProductController.getProductCategories
 )
-
-// TODO: Might not be added, since getProducts kind of covers it already
-//* Get Products Search Text (name, description, tags)
-// Returns ranked results by relevance
-
-//* Get newest products (products added in the last 30 days)
-// Sorted by createdAt descending
 
 //* Get Products in a Category by Category Name
 // Returns all products that belong to a category
@@ -113,14 +127,6 @@ router.get("/:productId",
     ProductController.getProductById
 )
 
-// TODO
-// //^ POST | Validate Stock before checkout 
-// router.post("/stock",
-//     currentUser, 
-
-//     handleInputErrors,
-//     ProductController.validateStock
-// )
 
 //! --- Admin Product Routes | Will possible be moved to adminRouter --- !// 
 

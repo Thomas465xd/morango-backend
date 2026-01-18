@@ -236,6 +236,47 @@ export class ProductController {
         })
     }
 
+    //* Get multiple Products by their Id's
+    static getProductsByIds = async (req: Request, res: Response) => {
+        const rawProductIds = req.query.productIds;
+
+        // Normalize query param
+        const productIds = Array.isArray(rawProductIds)
+            ? rawProductIds
+            : rawProductIds
+                ? [rawProductIds]
+                : [];
+
+        // Deduplicate Ids 
+        const uniqueIds = [...new Set(productIds)]
+
+        // Fetch products
+        const products = await Product.find({
+            isActive: true, 
+            _id: { $in: uniqueIds },
+        }).lean(); 
+
+        if(products.length === 0) {
+            throw new NotFoundError("Productos no Encontrados")
+        }
+
+        if(products.length !== uniqueIds.length) {
+            throw new NotFoundError("Uno o mas productos no existen")
+        }
+
+        // Enrich products in the response 
+        const enrichedProducts = enrichProducts(products); 
+        const total = Object.values(enrichedProducts).reduce(
+            (acc, product) => acc + product.finalPrice,
+            0
+        );
+
+        res.status(200).json({
+            products: enrichedProducts.map(formatLean), 
+            total,
+        })
+    }
+
     //* Get Product by ID
     static getProductById = async (req: Request, res: Response) => {
         const { productId } = req.params; 
