@@ -22,6 +22,10 @@ export interface PaymentInterface extends Document {
     mpPreferenceId: string 
     mpStatus: string 
 
+    // Retry payment token (for public checkout order ownership validations)
+    retryToken: string; 
+    retryTokenExpiresAt: Date; 
+
     amount: number 
     currency: string 
 
@@ -41,6 +45,8 @@ export interface PaymentAttrs {
     orderId: Types.ObjectId
     provider: "mercadopago"
     mpPreferenceId: string 
+    retryToken: string 
+    retryTokenExpiresAt: Date
     amount: number 
     currency: string 
     status: PaymentStatus
@@ -99,6 +105,16 @@ const paymentSchema : Schema = new Schema(
             enum: Object.values(PaymentStatus),
             default: PaymentStatus.Pending,
         },
+
+        retryToken: {
+            type: String, 
+            required: true, 
+        }, 
+
+        retryTokenExpiresAt: {
+            type: Date,
+            required: true,
+        }, 
 
         rejectionReason: {
             type: String, 

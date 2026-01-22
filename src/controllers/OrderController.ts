@@ -110,7 +110,7 @@ export class OrderController {
     static getOrderByNumber = async (req: Request, res: Response) => {
         const { trackingNumber } = req.params; 
 
-        const order = await Order.findOne({ trackingNumber }).lean(); 
+        const order = await Order.findOne({ trackingNumber }); 
         if(!order) {
             throw new NotFoundError("Orden no Encontrada")
         }
@@ -119,6 +119,7 @@ export class OrderController {
         // Exclude payment details & other sensitive info
         
         const publicOrder = {
+            id: order.id,
             trackingNumber: order.trackingNumber, 
             status: order.status, 
             createdAt: order.createdAt, 
@@ -444,7 +445,7 @@ export class OrderController {
         await order.save(); 
 
         res.status(200).json({
-            message: "Orden registrada Correctamente. Esperando pago.",
+            message: "Información de la orden actualizada correctamente 🎉",
             order
         });
     }

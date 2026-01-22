@@ -16,7 +16,7 @@ export async function deleteExpiredJob(currentTime?: number) {
         const expiredOrders = await Order.find({
             status: OrderStatus.Expired, 
             stockReservationExpiresAt: { $lt: now}, 
-            // updatedAt: { $lte: oneWeekAgo }
+            updatedAt: { $lte: oneWeekAgo }
         })
 
         console.log(colors.red(`Found ${expiredOrders.length} expired orders`));
