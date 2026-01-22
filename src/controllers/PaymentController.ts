@@ -8,8 +8,9 @@ import { handleApprovedPayment, handleFailedPayment, refundPayment } from "../ut
 import { ForbiddenError } from "../errors/forbidden-error";
 import { ResourceExpiredError } from "../errors/resource-expired-error";
 import { formatLean } from "../utils/json";
-import Product from "../models/Product";
 import { PaymentEmails } from "../emails/payment";
+import { createToken } from "../utils/token";
+import { NotAuthorizedError } from "../errors/not-authorized";
 
 export class PaymentController {
     //* ADMIN - get all payments
@@ -173,13 +174,18 @@ export class PaymentController {
             throw new NotFoundError("Orden no Encontrada")
         }
 
-        const payment = await Payment.findOne({ orderId: order._id }).lean();
+        const payment = await Payment.findOne({ orderId: order._id })
+            .sort({ createdAt: -1 }) // in case another payment is tied to this order (this should not happen, so just securing the thing)
+            .lean();
         if(!payment) {
             throw new NotFoundError("Referencia de pago no Encontrada")
         }
 
         res.status(200).json({ 
             orderStatus: order.status, 
+            trackingNumber: order.trackingNumber, 
+            paymentId: payment._id, 
+            retryToken: payment.retryToken, 
             paymentStatus: payment.status, 
             mpStatus: payment.mpStatus, 
             rejectionReason: payment.rejectionReason ? payment.rejectionReason : null,
@@ -191,6 +197,8 @@ export class PaymentController {
     //^ Create Payment Preference
     static createPreference = async (req: Request, res: Response) => {
         const { orderId } = req.body; 
+        
+        const isTest = process.env.NODE_ENV !== "production";
 
         // Find order
         const order = await Order.findById(orderId); 
@@ -198,13 +206,15 @@ export class PaymentController {
             throw new NotFoundError("Orden no Encontrada")
         }
 
+        // console.log(order); 
+
         // Verify order is in Pending status, otherwise throw Request Conflict (order expired)
         if(order.status !== OrderStatus.Pending) {
             throw new RequestConflictError("Orden Expirada")
         }
 
         // Verify Order info is set for checkout 
-        if(!order.customer.email || !order.shippingAddress.region || !order.shipping || !order.shippingMethod) {
+        if(!order.customer.email || !order.shippingAddress.region || order.shipping === null || !order.shippingMethod) {
             throw new RequestConflictError("Faltan datos en la Orden")
         }
 
@@ -228,21 +238,41 @@ export class PaymentController {
         const preference = await preferenceClient.create({
             body: {
                 items,
-                payer: {
+                payer: isTest
+                ? {
+                    name: "Test",
+                    surname: "APRO", // controla resultado
+                    email: `test_${Date.now()}@example.com`,
+                    }
+                : {
                     name: order.customer.name,
                     surname: order.customer.surname,
                     email: order.customer.email,
-                    phone: {
-                        number: order.customer.phone ? order.customer.phone : undefined
-                    }
-                },
+                    phone: order.customer.phone
+                        ? { number: order.customer.phone }
+                        : undefined,
+                    },
                 back_urls: {
-                    success: `${process.env.FRONTEND_URL}/payment/success`,
-                    failure: `${process.env.FRONTEND_URL}/payment/failure`,
-                    pending: `${process.env.FRONTEND_URL}/payment/pending`
+                    success: `${process.env.FRONTEND_URL}/checkout/success`,
+                    failure: `${process.env.FRONTEND_URL}/checkout/failure`,
+                    pending: `${process.env.FRONTEND_URL}/checkout/pending`
                 },
-                auto_return: "approved",
-                notification_url: `${process.env.BACKEND_URL}/api/payments/webhook`,
+                ...(isTest
+                ? {}
+                : {
+                    shipments: {
+                        receiver_address: {
+                            zip_code: order.shippingAddress.zipCode ?? undefined,
+                            street_name: order.shippingAddress.street,
+                            city_name: order.shippingAddress.city,
+                            state_name: order.shippingAddress.region.toString(),
+                            country_name: order.shippingAddress.country,
+                        },
+                    },
+                }),
+
+                auto_return: process.env.NODE_ENV === "production" ? "approved" : undefined,
+                notification_url: process.env.NODE_ENV === "production" ? `${process.env.BACKEND_URL}/api/payments/webhook` : process.env.NGROK_URL,
                 external_reference: order.trackingNumber,
                 statement_descriptor: "Morango Joyas",
                 expires: true,
@@ -269,6 +299,8 @@ export class PaymentController {
                 orderId: order.id, 
                 provider: "mercadopago", 
                 mpPreferenceId: preference.id, 
+                retryToken: createToken(), 
+                retryTokenExpiresAt: order.stockReservationExpiresAt, 
                 amount: order.total, 
                 currency: "CLP", 
                 status: PaymentStatus.Pending
@@ -281,7 +313,7 @@ export class PaymentController {
         }
 
         res.status(201).json({ 
-            message: "Payment Preference Created Successfully", 
+            message: "Preferencia de pago creada exitosamente 📋🎉", 
             orderId, 
             paymentId: payment.id,
             preferenceId: preference.id, 
@@ -289,6 +321,67 @@ export class PaymentController {
             sandboxInitPoint: preference.sandbox_init_point
         })
     }
+
+    static createPayment = async (req: Request, res: Response) => {
+        const {
+            token,
+            payment_method_id,
+            installments,
+            issuer_id,
+            payer,
+            orderId
+        } = req.body;
+
+        // Buscar orden
+        const order = await Order.findById(orderId);
+        if (!order) {
+            throw new NotFoundError("Orden no encontrada");
+        }
+
+        if (order.status !== OrderStatus.Pending) {
+            throw new RequestConflictError("Orden no válida para pago");
+        }
+
+        if (order.stockReservationExpiresAt < new Date()) {
+            throw new RequestConflictError("Orden expirada");
+        }
+
+        // Crear payment en Mercado Pago
+        const mpPayment = await paymentClient.create({
+            body: {
+                transaction_amount: order.total,
+                token,
+                payment_method_id,
+                installments,
+                issuer_id,
+                payer: {
+                    email: payer.email,
+                    identification: payer.identification
+                },
+                external_reference: order.trackingNumber,
+                notification_url: process.env.NODE_ENV === "production" ? `${process.env.BACKEND_URL}/api/payments/webhook` : process.env.NGROK_URL,
+            }, 
+            requestOptions: {
+                idempotencyKey: `create-payment-${order.id}`
+            }
+        });
+
+        // Persistir mpPaymentId
+        const payment = await Payment.findOne({ orderId: order.id });
+        if (!payment) {
+            throw new NotFoundError("Payment record in DB not found");
+        }
+
+        payment.mpPaymentId = mpPayment.id!.toString();
+        payment.mpStatus = mpPayment.status!;
+        await payment.save();
+
+        res.status(200).json({
+            paymentId: payment.id,
+            mpPaymentId: mpPayment.id,
+            status: mpPayment.status,
+        });
+    };
 
     //^ Mercado Pago Webhook
     static mpWebhook = async (req: Request, res: Response) => {
@@ -307,7 +400,20 @@ export class PaymentController {
         const paymentId = data.id; 
 
         //! Fetch payment details from MP
-        const mpPayment = await paymentClient.get({ id: paymentId }); 
+        let mpPayment;
+        try {
+            mpPayment = await paymentClient.get({ id: paymentId });
+        } catch (error) {
+            // MP payment does not exist or temporary error
+            console.warn("MP payment not found or error fetching payment", {
+                paymentId,
+                error: error?.message,
+            });
+        
+            res.status(200).send("OK");
+            return; 
+        }
+
 
         console.log('MP Payment details:', mpPayment);
 
@@ -322,14 +428,18 @@ export class PaymentController {
 
         // Check if order exists
         if(!order) {
-            throw new NotFoundError(`Order "${externalReference}" not Found`)
+            console.warn(`Order ${externalReference} not found`);
+            res.status(200).send("OK");
+            return; 
         }
 
         // Find or create payment record
         let payment = await Payment.findOne({ orderId: order.id }); 
 
         if(!payment) {
-            throw new NotFoundError(`Payment not found for ${order.id}`)
+            console.warn(`Payment not found for ${order.id}`)
+            res.status(200).send("OK") 
+            return
         }
 
         // Idempotency: do nothing if final state already reached
@@ -401,7 +511,9 @@ export class PaymentController {
                 //* Send refund notification email
                 await PaymentEmails.Refunded.send(order, payment); 
 
-                throw new ResourceExpiredError("Pago Reembolsado (orden expirada).")
+                console.warn("Pago Reembolsado (orden expirada).")
+                res.status(200).send("OK")
+                return
             }
 
             //* Normal flow
@@ -416,10 +528,10 @@ export class PaymentController {
     //^ Retry failed payment
     static retryPayment = async (req: Request, res: Response) => {
         const { orderId } = req.params; 
-        const { email } = req.body; 
+        const { token } = req.query; 
         
         // Get associated order
-        const order = await Order.findOne({ _id: orderId, "customer.email": email }); 
+        const order = await Order.findById(orderId); 
         if(!order) {
             throw new NotFoundError("Orden no Encontrada")
         }
@@ -435,10 +547,23 @@ export class PaymentController {
         }
 
         // Check if order has associated payment record 
-        const paymentRecord = await Payment.findOne({ orderId: order._id });
+        const paymentRecord = await Payment.findOne({ 
+            orderId: order._id,     
+        });
 
         if (!paymentRecord) {
-            throw new NotFoundError("Pago no Encontrado");
+            throw new NotFoundError("Pago no Encontrado.");
+        }
+
+        // validate retryToken in the request to check user ownership of the order
+        if (paymentRecord.retryToken !== token) {
+            throw new NotAuthorizedError("No tienes permiso para reintentar este pago.")
+        }
+
+        // Validate retry token is not expired
+        // probably redundant since it should already throw with order expiration validation since same timestampt
+        if (paymentRecord.retryTokenExpiresAt < new Date()) {
+            throw new ResourceExpiredError("El pago ha expirado.")
         }
 
         // Create new preference (same as createPreference logic)
@@ -465,12 +590,12 @@ export class PaymentController {
                     }
                 },
                 back_urls: {
-                    success: `${process.env.FRONTEND_URL}/payment/success`,
-                    failure: `${process.env.FRONTEND_URL}/payment/failure`,
-                    pending: `${process.env.FRONTEND_URL}/payment/pending`
+                    success: `${process.env.FRONTEND_URL}/checkout/success`,
+                    failure: `${process.env.FRONTEND_URL}/checkout/failure`,
+                    pending: `${process.env.FRONTEND_URL}/checkout/pending`
                 },
-                auto_return: "approved",
-                notification_url: `${process.env.BACKEND_URL}/api/payments/webhook`,
+                auto_return: process.env.NODE_ENV === "production" ? "approved" : undefined,
+                notification_url: process.env.NODE_ENV === "production" ? `${process.env.BACKEND_URL}/api/payments/webhook` : process.env.NGROK_URL,
                 external_reference: order.trackingNumber,
                 statement_descriptor: "Morango Joyas",
                 expires: true,
@@ -484,11 +609,16 @@ export class PaymentController {
 
         paymentRecord.mpPreferenceId = preference.id!;
         paymentRecord.status = PaymentStatus.Pending;
+
+        // Rotate token after each payment retry 
+        paymentRecord.retryToken = createToken(); 
+        paymentRecord.retryTokenExpiresAt = order.stockReservationExpiresAt;
         await paymentRecord.save();
 
         res.status(201).json({ 
-            message: "Pago Registrado Exitosamente.", 
+            message: "Preferencia de Pago Actualizada Exitosamente. 🎉", 
             orderId,
+            amount: paymentRecord.amount, 
             paymentId: paymentRecord.id,
             preferenceId: preference.id,
             initPoint: preference.init_point,
