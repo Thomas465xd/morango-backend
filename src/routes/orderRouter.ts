@@ -145,6 +145,9 @@ router.patch("/checkout/:orderId",
 router.get("/admin", 
     currentUser, 
     requireAdmin,
+    query("trackingNumber")
+        .optional()
+        .notEmpty().withMessage("El trackingNumber no puede ir vacío"),
     query("status")
         .optional()
         .notEmpty().withMessage("El estado no puede ir vacío")
@@ -153,6 +156,13 @@ router.get("/admin",
         .optional()
         .notEmpty().withMessage("El Email no puede ir vacío")
         .isEmail().withMessage("Email inválido"),
+    query("hasPayment")
+        .optional()
+        .isBoolean().withMessage("hasPayment debe ser true o false"),
+
+    query("isGuest")
+        .optional()
+        .isBoolean().withMessage("isGuest debe ser true o false"),
     query("startDate")
         .optional()
         .isISO8601().withMessage("La fecha de inicio debe ser una fecha válida"),

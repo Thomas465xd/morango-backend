@@ -6,7 +6,7 @@ export class ResetPasswordEmail {
     static sendResetPasswordEmail = async (user: UserInterface, token: string) => { 
         try {
             const resetUrl = `${process.env.FRONTEND_URL}/auth/reset-password?token=${token}`;
-            const logoUrl = `${process.env.FRONTEND_URL}/_next/static/media/logo-no-bg.67da0ed8.png`;
+            const logoUrl = process.env.LOGO_URL;
             
             const emailHTML = `
 <!DOCTYPE html>

@@ -85,7 +85,7 @@ export async function refundPayment(
         payment_id: mpPaymentId,
         body: amount ? { amount } : undefined,
         requestOptions: {
-            idempotencyKey: `refund-${mpPaymentId}`
+            idempotencyKey: `refund-${mpPaymentId}-${Date.now()}`
         }
     });
 }

@@ -123,7 +123,9 @@ export class OrderController {
             trackingNumber: order.trackingNumber, 
             status: order.status, 
             createdAt: order.createdAt, 
+            updatedAt: order.updatedAt, 
             deliveredAt: order.deliveredAt, 
+            stockReservationExpiresAt: order.stockReservationExpiresAt, 
             items: order.items.map((item: Item) => ({
                 productName: item.productName, 
                 productImage: item.productImage, 
@@ -166,11 +168,23 @@ export class OrderController {
         const perPage = parseInt(req.query.perPage as string) || 10;
 
         // Destructure possible search queries
-        const { status, email, startDate, endDate } = req.query; 
+        const { 
+            trackingNumber, 
+            status, 
+            email, 
+            hasPayment, 
+            isGuest, 
+            startDate, 
+            endDate 
+        } = req.query; 
 
-        //! CRITICAl - Add userId to filters so that only current auth user orders are returned
         // Search Filters
         const filters: any = { };
+
+        //* Filter by Tracking Number
+        if (trackingNumber) {
+            filters.trackingNumber = trackingNumber;
+        }
 
         //* Filter by Order status
         if (status) {
@@ -197,6 +211,22 @@ export class OrderController {
                 $regex: `^${email}`, 
                 $options: "i", // case-insensite
             } 
+        }
+
+        //* Filter by Payment presence
+        if (hasPayment !== undefined) {
+            if (hasPayment === "true") {
+                filters.paymentId = { $exists: true };
+            }
+
+            if (hasPayment === "false") {
+                filters.paymentId = { $exists: false };
+            }
+        }
+
+        //* Filter by Guest vs Registered user
+        if (isGuest !== undefined) {
+            filters["customer.isGuest"] = isGuest === "true";
         }
 
         //* Filter by Date Range (createdAt)
@@ -248,17 +278,20 @@ export class OrderController {
             perPage, 
             currentPage: page, 
             filters: {
+                trackingNumber: trackingNumber || null, 
                 status: status || null,
                 email: email || null, 
+                hasPayment: hasPayment !== undefined ? hasPayment === "true" : null,
+                isGuest: isGuest !== undefined ? isGuest === "true" : null,
                 startDate: startDate || null, 
                 endDate: endDate || null, 
                 sortBy: sortBy || 'createdAt',
-                sortOrder
+                sortOrder: req.query.sortOrder === "asc" ? "asc" : "desc",
             }
         });
     }
 
-    //* ADMIN - Get order by ID | All orders allowed
+    //* ADMIN - Get order by ID with payment details | All orders allowed
     static getOrderByIdAdmin = async (req: Request, res: Response) => {
         const { orderId } = req.params; 
 

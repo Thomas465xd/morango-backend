@@ -6,7 +6,7 @@ export class ConfirmationEmail {
     static sendConfirmationEmail = async (user: UserInterface, token: string) => { 
         try {
             const confirmationUrl = `${process.env.FRONTEND_URL}/auth/confirm?token=${token}`;
-            const logoUrl = `${process.env.FRONTEND_URL}/_next/static/media/logo-no-bg.67da0ed8.png`;
+            const logoUrl = process.env.LOGO_URL;
             
             const emailHTML = `
 <!DOCTYPE html>

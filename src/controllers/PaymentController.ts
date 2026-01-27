@@ -280,7 +280,7 @@ export class PaymentController {
                 expiration_date_to: order.stockReservationExpiresAt.toISOString()
             }, 
             requestOptions: {
-                idempotencyKey: `create-preference-${order.id}`
+                idempotencyKey: `create-preference-${order.id}-${Date.now()}`
             }
         });
 
@@ -362,7 +362,7 @@ export class PaymentController {
                 notification_url: process.env.NODE_ENV === "production" ? `${process.env.BACKEND_URL}/api/payments/webhook` : process.env.NGROK_URL,
             }, 
             requestOptions: {
-                idempotencyKey: `create-payment-${order.id}`
+                idempotencyKey: `create-payment-${order.id}-${Date.now()}`
             }
         });
 
@@ -603,7 +603,7 @@ export class PaymentController {
                 expiration_date_to: order.stockReservationExpiresAt.toISOString()
             }, 
             requestOptions: {
-                idempotencyKey: `create-preference-${order.id}`
+                idempotencyKey: `create-preference-${order.id}-${Date.now()}`
             }
         });
 
