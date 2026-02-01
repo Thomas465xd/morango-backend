@@ -132,7 +132,16 @@ export class PaymentRefundedEmail {
                                                     <p style="margin: 0; font-size: 13px; color: #92400e;">Método de pago:</p>
                                                 </td>
                                                 <td style="padding: 3px 0; text-align: right;">
-                                                    <p style="margin: 0; font-size: 13px; font-weight: 600; color: #92400e;">${payment.paymentMethod === 'master' ? 'Mastercard' : payment.paymentMethod === 'visa' ? 'Visa' : payment.paymentMethod.charAt(0).toUpperCase() + payment.paymentMethod.slice(1)}</p>
+                                                    <p style="margin: 0; font-size: 13px; font-weight: 600; color: #92400e;">
+                                                        ${payment.paymentMethod
+                                                            ? payment.paymentMethod === 'master'
+                                                            ? 'Mastercard'
+                                                            : payment.paymentMethod === 'visa'
+                                                            ? 'Visa'
+                                                            : payment.paymentMethod.charAt(0).toUpperCase() + payment.paymentMethod.slice(1)
+                                                            : 'No especificado'
+                                                        }
+                                                    </p>
                                                 </td>
                                             </tr>
                                             <tr>
@@ -187,7 +196,7 @@ export class PaymentRefundedEmail {
                             <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
                                 <tr>
                                     <td style="text-align: center; padding: 10px 0 25px;">
-                                        <a href="${process.env.FRONTEND_URL}/orders/public/${order.trackingNumber}" style="display: inline-block; padding: 15px 45px; background-color: #000000; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 10px;">
+                                        <a href="${process.env.FRONTEND_URL}/home/orders/public/${order.trackingNumber}" style="display: inline-block; padding: 15px 45px; background-color: #000000; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 10px;">
                                             Ver Detalles del Pedido
                                         </a>
                                     </td>
@@ -254,7 +263,7 @@ export class PaymentRefundedEmail {
             const mailOptions = {
                 from: `"Morango Joyas" <${process.env.NOREPLY_EMAIL}>`,
                 to: [order.customer.email], 
-                subject: `📋✅ Pago Reembolsado - ${order.trackingNumber}`, 
+                subject: `📋 Pago Reembolsado - ${order.trackingNumber}`, 
                 html: emailHTML
             }
 

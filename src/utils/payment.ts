@@ -4,6 +4,7 @@ import { PaymentInterface } from '../models/Payment';
 import { PaymentEmails } from '../emails/payment';
 import { refundClient } from '../config/mercadopago';
 import { RequestConflictError } from '../errors/conflict-error';
+import { AdminEmails } from '../emails/admin';
 
 export async function handleApprovedPayment(order: OrderInterface, payment: PaymentInterface) {
     try {
@@ -34,6 +35,9 @@ export async function handleApprovedPayment(order: OrderInterface, payment: Paym
         
         // 3. Send order successful payment email
         await PaymentEmails.Approved.send(order, payment);
+
+        // 4. Send notification email to admin for successful order & payment
+        await AdminEmails.NewOrder.send(order, payment)
         
         console.log(`Payment processed successfully for order ${order.trackingNumber}`);
         
