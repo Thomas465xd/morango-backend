@@ -197,7 +197,7 @@ describe("getOrdersAdmin Request Handler Tests", () => {
         expect(r1.body.filters.status).toEqual(null); 
         expect(r1.body.filters.email).toEqual("customer@customer.com")
         expect(r1.body.filters.sortBy).toEqual('createdAt')
-        expect(r1.body.filters.sortOrder).toEqual(-1);   
+        expect(r1.body.filters.sortOrder).toEqual("desc");   
 
         // Test dates (first two order should be the one with "Entregado" and second "En Transito" status)
         expect(r1.body.orders[0].status).toEqual("Entregado")
@@ -214,11 +214,11 @@ describe("getOrdersAdmin Request Handler Tests", () => {
         expect(r2.body.currentPage).toEqual(1);
         expect(r2.body.filters.status).toEqual("Delivered"); 
         expect(r2.body.filters.sortBy).toEqual('createdAt')
-        expect(r2.body.filters.sortOrder).toEqual(-1);  
+        expect(r2.body.filters.sortOrder).toEqual("desc");  
 
         // Test sortOrder & sortBy
         expect(r3.body.orders[0].status).toEqual("En Transito")
-        expect(r3.body.filters.sortOrder).toEqual(1) // 1 equals asc
+        expect(r3.body.filters.sortOrder).toEqual("asc") 
         expect(r3.body.filters.sortBy).toEqual("date")
 
         // Test date ranges

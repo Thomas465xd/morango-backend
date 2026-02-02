@@ -363,6 +363,8 @@ global.createPayment = async (order: OrderInterface, mpPaymentId?: string) => {
                 mpPaymentId: mpPaymentId ? mpPaymentId : null,
                 amount: order.total, 
                 currency: "CLP", 
+                retryToken: crypto.randomUUID(), 
+                retryTokenExpiresAt: order.stockReservationExpiresAt, 
                 status: PaymentStatus.Approved, 
                 createdAt: order.createdAt
             })
@@ -392,6 +394,8 @@ global.createPayment = async (order: OrderInterface, mpPaymentId?: string) => {
                 mpPreferenceId: "mock-pref-id", 
                 mpPaymentId: mpPaymentId ? mpPaymentId : null,
                 amount: order.total, 
+                retryToken: crypto.randomUUID(), 
+                retryTokenExpiresAt: order.stockReservationExpiresAt, 
                 currency: "CLP", 
                 status: PaymentStatus.Pending, 
                 createdAt: order.createdAt

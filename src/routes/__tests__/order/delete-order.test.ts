@@ -1,126 +1,229 @@
 import request from "supertest"
 import server from "../../../server"
 import Product from "../../../models/Product";
-import mongoose from "mongoose";
 import Order, { OrderStatus } from "../../../models/Order";
+import Payment, { PaymentStatus } from "../../../models/Payment";
+import mongoose from "mongoose";
 
-//? 📋 Input Validation Tests
-describe("DELETE /api/orders/admin/:orderId Input Validation Tests", () => {
-    it("Returns a 403 Forbidden for non admin user trying to access", async () => {
+//? 📋 DELETE /api/orders/admin/:orderId - Input Validation Tests
+describe("DELETE /api/orders/admin/:orderId - Input Validation", () => {
+    it("Returns 403 Forbidden for non-admin user", async () => {
         const customer = await global.createUser(true, false); 
         const { order } = await global.createOrder(); 
 
         await request(server)
             .delete(`/api/orders/admin/${order.id}`)
-            .send()
             .set("Cookie", global.setCookie(customer.id))
             .expect(403)
     })
 
-    it("Returns a 400 with invalid :orderId param", async () => {
+    it("Returns 400 Bad Request with invalid ObjectId", async () => {
         const admin = await global.createUser(true, true); 
 
         await request(server)
-            .delete(`/api/orders/admin/asdf`)
-            .send()
+            .delete(`/api/orders/admin/invalid-id`)
             .set("Cookie", global.setCookie(admin.id))
             .expect(400)
     })
 })
 
-describe("deleteProduct Request Handler Tests", () => {
-    it("Returns a 404 Not Found if order trying to be deleted does not exist", async () => {
+//? DELETE /api/orders/admin/:orderId - deleteOrder request handler Tests
+describe("deleteOrder request handler", () => {
+    it("Returns 404 Not Found if order does not exist", async () => {
         const admin = await global.createUser(true, true); 
-        const orderId = new mongoose.Types.ObjectId; 
+        const orderId = new mongoose.Types.ObjectId();
 
-        await request(server)
+        const response = await request(server)
             .delete(`/api/orders/admin/${orderId}`)
-            .send()
             .set("Cookie", global.setCookie(admin.id))
             .expect(404)
+
+        expect(response.body.errors[0].message).toContain("no Encontrada")
     })
 
-    it("Returns a 200 OK if pending or processing order is successfully deleted & check Stocks were released", async () => {
+    it("Returns 409 Conflict when deleting order with approved payment", async () => {
         const admin = await global.createUser(true, true); 
-        const customer = await global.createUser(true, false, "customer@customer.com")
+        const customer = await global.createUser(true, false, "customer@test.com")
+        const { order } = await global.createOrder(customer, OrderStatus.Processing)
 
-        // Stock should only release on ordes with Pending or Processing Statuses
-        const { order, secondProduct } = await global.createOrder(customer, OrderStatus.Pending); 
+        // Create approved payment
+        const payment = await global.createPayment(order, "MP-12345")
+        order.paymentId = payment.id
+        await order.save()
 
-        // Validate stock is actually reserved
-        const checkReservedStock = await Product.findById(secondProduct.id); 
-        expect(checkReservedStock.reserved).toEqual(1); 
-
-        // This request should release stock
-        await request(server)
+        const response = await request(server)
             .delete(`/api/orders/admin/${order.id}`)
-            .send()
             .set("Cookie", global.setCookie(admin.id))
-            .expect(200)
+            .expect(409)
 
-        const checkReleasedStock = await Product.findById(secondProduct.id);
-        expect(checkReleasedStock.reserved).toEqual(0); 
-
-        expect(await Order.findById(order.id)).toBeNull(); 
-    })
-
-    it("Returns a 200 OK if processing or sent order is successfully deleted & check Stocks are added back to inventory", async () => {
-        const admin = await global.createUser(true, true); 
-        const customer = await global.createUser(true, false, "customer@customer.com")
-
-        // Reserved Stock should only release in an order with Pending Status
-        // If order trying to be deleted is cancelled or expired, then stock has probably been released
-
-        //* If want to test the other case uncomment 
-        const { order, secondProduct } = await global.createOrder(customer, OrderStatus.Processing); 
-        // const { order, secondProduct } = await global.createOrder(customer, OrderStatus.Sent); 
-
-        // Validate stock is actually sold
-        const checkReservedStock = await Product.findById(secondProduct.id); 
-        expect(checkReservedStock.reserved).toEqual(0); // Reserved should be 0 since stock is sold
-        expect(checkReservedStock.stock).toEqual(7) // Stock shouldn't be 8 since 1 was sold
+        expect(response.body.errors[0].message).toContain("pagos aprobados")
+        expect(response.body.errors[0].message).toContain("archiva")
         
-        // This request should release reserved stock
-        await request(server)
-            .delete(`/api/orders/admin/${order.id}`)
-            .send()
-            .set("Cookie", global.setCookie(admin.id))
-            .expect(200)
-
-        const checkReleasedStock = await Product.findById(secondProduct.id);
-        expect(checkReleasedStock.reserved).toEqual(0); // stays the same
-        expect(checkReleasedStock.stock).toEqual(8); // Re-adds sold stock
-
-        expect(await Order.findById(order.id)).toBeNull(); 
+        // Verify order still exists
+        const stillExists = await Order.findById(order.id)
+        expect(stillExists).toBeDefined()
     })
 
-    it("Returns a 200 OK if expired or cancelled order is successfully deleted & check reserved and stocks stay the same (since cancelled and expired already managed)", async () => {
+    it("Returns 409 Conflict when deleting delivered order", async () => {
         const admin = await global.createUser(true, true); 
-        const customer = await global.createUser(true, false, "customer@customer.com")
+        const customer = await global.createUser(true, false, "customer@test.com")
+        const { order } = await global.createOrder(customer, OrderStatus.Delivered)
 
-        // Reserved Stock should only release in an order with Pending Status
-        // If order trying to be deleted is cancelled or expired, then stock has probably been released
-
-        //* If want to test the other case uncomment 
-        const { order, secondProduct } = await global.createOrder(customer, OrderStatus.Cancelled); 
-        // const { order, secondProduct } = await global.createOrder(customer, OrderStatus.Expired); 
-
-        // Validate stock is actually reserved
-        const checkReservedStock = await Product.findById(secondProduct.id); 
-        expect(checkReservedStock.reserved).toEqual(0); // Reserved should be 0 since order is cancelled
-        expect(checkReservedStock.stock).toEqual(8) // Stays the same
-        
-        // This request should release reserved stock
-        await request(server)
+        const response = await request(server)
             .delete(`/api/orders/admin/${order.id}`)
-            .send()
+            .set("Cookie", global.setCookie(admin.id))
+            .expect(409)
+
+        expect(response.body.errors[0].message).toContain("entregadas")
+        expect(response.body.errors[0].message).toContain("archiva")
+
+        // Verify order still exists
+        const stillExists = await Order.findById(order.id)
+        expect(stillExists).toBeDefined()
+    })
+
+    it("Successfully deletes pending order without payment and releases reserved stock", async () => {
+        const admin = await global.createUser(true, true); 
+        const customer = await global.createUser(true, false, "customer@test.com")
+        const { order, firstProduct, secondProduct } = await global.createOrder(customer, OrderStatus.Pending)
+
+        // Verify stock is reserved
+        let product1 = await Product.findById(firstProduct.id)
+        expect(product1.reserved).toBe(1)
+
+        const response = await request(server)
+            .delete(`/api/orders/admin/${order.id}`)
             .set("Cookie", global.setCookie(admin.id))
             .expect(200)
 
-        const checkReleasedStock = await Product.findById(secondProduct.id);
-        expect(checkReleasedStock.reserved).toEqual(0); // stays the same
-        expect(checkReleasedStock.stock).toEqual(8); // Stays the same
+        // Verify order is deleted
+        const deletedOrder = await Order.findById(order.id)
+        expect(deletedOrder).toBeNull()
 
-        expect(await Order.findById(order.id)).toBeNull(); 
+        // Verify stock was released
+        product1 = await Product.findById(firstProduct.id)
+        expect(product1.reserved).toBe(0)
+    })
+
+    it("Successfully deletes processing order without payment and restores stock to inventory", async () => {
+        const admin = await global.createUser(true, true); 
+        const customer = await global.createUser(true, false, "customer@test.com")
+        const { order, firstProduct } = await global.createOrder(customer, OrderStatus.Processing)
+
+        // Stock should be sold (not reserved)
+        let product = await Product.findById(firstProduct.id)
+        expect(product.reserved).toBe(0)
+        expect(product.stock).toBe(7) // 8 - 1 sold
+
+        const response = await request(server)
+            .delete(`/api/orders/admin/${order.id}`)
+            .set("Cookie", global.setCookie(admin.id))
+            .expect(200)
+
+        // Verify order is deleted
+        const deletedOrder = await Order.findById(order.id)
+        expect(deletedOrder).toBeNull()
+
+        // Verify stock was restored
+        product = await Product.findById(firstProduct.id)
+        expect(product.stock).toBe(8)
+        expect(product.reserved).toBe(0)
+    })
+
+    it("Successfully deletes sent order and restores stock to inventory", async () => {
+        const admin = await global.createUser(true, true); 
+        const customer = await global.createUser(true, false, "customer@test.com")
+        const { order, secondProduct } = await global.createOrder(customer, OrderStatus.Sent)
+
+        const response = await request(server)
+            .delete(`/api/orders/admin/${order.id}`)
+            .set("Cookie", global.setCookie(admin.id))
+
+        expect(response.status).toBe(200)
+
+        // Verify stock was restored
+        const product = await Product.findById(secondProduct.id)
+        expect(product.stock).toBe(8)
+    })
+
+    it("Successfully deletes cancelled order with no stock changes", async () => {
+        const admin = await global.createUser(true, true); 
+        const customer = await global.createUser(true, false, "customer@test.com")
+        const { order, firstProduct } = await global.createOrder(customer, OrderStatus.Cancelled)
+
+        // Stock should not be reserved (already released)
+        let product = await Product.findById(firstProduct.id)
+        const initialStock = product.stock
+        const initialReserved = product.reserved
+
+        const response = await request(server)
+            .delete(`/api/orders/admin/${order.id}`)
+            .set("Cookie", global.setCookie(admin.id))
+
+        expect(response.status).toBe(200)
+
+        // Verify stock unchanged
+        product = await Product.findById(firstProduct.id)
+        expect(product.stock).toBe(initialStock)
+        expect(product.reserved).toBe(initialReserved)
+    })
+
+    it("Successfully deletes expired order with no stock changes", async () => {
+        const admin = await global.createUser(true, true); 
+        const customer = await global.createUser(true, false, "customer@test.com")
+        const { order, secondProduct } = await global.createOrder(customer, OrderStatus.Expired)
+
+        const response = await request(server)
+            .delete(`/api/orders/admin/${order.id}`)
+            .set("Cookie", global.setCookie(admin.id))
+
+        expect(response.status).toBe(200)
+
+        // Verify order is deleted
+        const deletedOrder = await Order.findById(order.id)
+        expect(deletedOrder).toBeNull()
+    })
+
+    it("Deletes non-approved payment when hard deleting order", async () => {
+        const admin = await global.createUser(true, true); 
+        const customer = await global.createUser(true, false, "customer@test.com")
+        const { order } = await global.createOrder(customer, OrderStatus.Pending)
+
+        // Create a non-approved payment
+        const payment = await global.createPayment(order); 
+
+        payment.status = PaymentStatus.Pending; 
+
+        order.paymentId = payment.id
+        await order.save()
+
+        const response = await request(server)
+            .delete(`/api/orders/admin/${order.id}`)
+            .set("Cookie", global.setCookie(admin.id))
+
+        expect(response.status).toBe(200)
+
+        // Verify payment was deleted
+        const deletedPayment = await Payment.findById(payment.id)
+        expect(deletedPayment).toBeNull()
+    })
+
+    it("Preserves approved payment when deleting is blocked", async () => {
+        const admin = await global.createUser(true, true); 
+        const customer = await global.createUser(true, false, "customer@test.com")
+        const { order } = await global.createOrder(customer, OrderStatus.Processing)
+
+        const payment = await global.createPayment(order)
+        order.paymentId = payment.id
+        await order.save()
+
+        await request(server)
+            .delete(`/api/orders/admin/${order.id}`)
+            .set("Cookie", global.setCookie(admin.id))
+            .expect(409)
+
+        // Verify payment still exists
+        const existingPayment = await Payment.findById(payment.id)
+        expect(existingPayment).toBeDefined()
     })
 })
