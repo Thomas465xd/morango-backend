@@ -159,7 +159,9 @@ router.get("/admin",
     query("hasPayment")
         .optional()
         .isBoolean().withMessage("hasPayment debe ser true o false"),
-
+    query("includeArchived")
+        .optional()
+        .isBoolean().withMessage("includeArchived debe ser true o false"),
     query("isGuest")
         .optional()
         .isBoolean().withMessage("isGuest debe ser true o false"),
@@ -219,9 +221,11 @@ router.patch("/admin/status/:orderId",
         .isISO8601().withMessage("La fecha de entrega debe ser en formato YYYY-MM-DD"),
     handleInputErrors,
     OrderController.updateOrderStatus
-)
+) 
 
 //! 7.- DELETE - Delete order entirely
+// Hard delete with safeguards: prevents deletion of approved payment orders
+// Orders with approved payments must be archived instead
 router.delete("/admin/:orderId", 
     currentUser, 
     requireAdmin,
@@ -232,13 +236,30 @@ router.delete("/admin/:orderId",
     OrderController.deleteOrder
 )
 
+//! 8.- POST - Archive order (soft delete)
+// Soft-deletes order by setting archivedAt timestamp and archivedBy admin ID
+// Preserves order and payment data for audit trail and dispute resolution
+// Used for approved payment orders and delivered orders that shouldn't be hard deleted
+router.post("/admin/archive/:orderId", 
+    currentUser, 
+    requireAdmin,
+    param("orderId")
+        .isMongoId().withMessage("ID de la orden Inválido")
+        .notEmpty().withMessage("El ID de la orden es Obligatorio"), 
+    handleInputErrors,
+    OrderController.archiveOrder
+)
+
 //* 🗣️ Auth User Order Management 🗣️ *//
 
-//* 8.- Get current authenticated user registered orders
+//* 9.- Get current authenticated user registered orders
 // pagination support, filter by status, sort by date (desc)
 router.get("/", 
     currentUser, 
     requireAuth, 
+    query("trackingNumber")
+        .optional()
+        .notEmpty().withMessage("El trackingNumber no puede ir vacío"),
     query("status")
         .optional()
         .notEmpty().withMessage("El estado no puede ir vacío")
@@ -255,7 +276,7 @@ router.get("/",
     OrderController.getAuthUserOrders
 )
 
-//* 9.- Get single order details authenticated
+//* 10.- Get single order details authenticated
 // User can only see their own orders, more detailed than public tracking, 
 // includes payment info 
 router.get("/:orderId", 
@@ -268,7 +289,7 @@ router.get("/:orderId",
     OrderController.getAuthUserOrderById
 )
 
-//? 10.- PATCH - Cancel order before payment | USER
+//? 11.- PATCH - Cancel order before payment | USER
 // Only allowed if status is "Esperando pago", release reserved stock,
 // cannot cancel after payment 
 router.patch("/cancel/:orderId", 

@@ -20,7 +20,7 @@ export class OrderController {
         const perPage = parseInt(req.query.perPage as string) || 10;
 
         // Destructure possible search queries
-        const { status } = req.query; 
+        const { status, trackingNumber } = req.query; 
 
         //! CRITICAl - Add userId to filters so that only current auth user orders are returned
         // Search Filters
@@ -44,6 +44,11 @@ export class OrderController {
             if (normalizedStatus) {
                 filters.status = normalizedStatus;
             }
+        }
+
+        //* Filter by order trackingNumber 
+        if (trackingNumber) {
+            filters.trackingNumber = trackingNumber
         }
 
 
@@ -84,8 +89,9 @@ export class OrderController {
             currentPage: page, 
             filters: {
                 status: status || null,
+                trackingNumber: trackingNumber || null,
                 sortBy: sortBy || 'createdAt',
-                sortOrder
+                sortOrder: req.query.sortOrder === "asc" ? "asc" : "desc",
             }
         });
     }
@@ -175,11 +181,23 @@ export class OrderController {
             hasPayment, 
             isGuest, 
             startDate, 
-            endDate 
+            endDate,
+            includeArchived
         } = req.query; 
 
         // Search Filters
         const filters: any = { };
+
+        //! IMPORTANT: Exclude archived orders by default
+        if (includeArchived !== "true") {
+            // Active orders only
+            filters.archivedAt = null;
+        }
+
+        // If explicitly requested, return ONLY archived orders
+        if (includeArchived === "true") {
+            filters.archivedAt = { $ne: null };
+        }
 
         //* Filter by Tracking Number
         if (trackingNumber) {
@@ -287,6 +305,7 @@ export class OrderController {
                 endDate: endDate || null, 
                 sortBy: sortBy || 'createdAt',
                 sortOrder: req.query.sortOrder === "asc" ? "asc" : "desc",
+                includeArchived: includeArchived === "true"
             }
         });
     }
@@ -686,13 +705,30 @@ export class OrderController {
 
     }
 
-    //! ADMIN - PERMANENT DELETE
+    //! ADMIN - PERMANENT DELETE (with safeguards for approved payments)
     static deleteOrder = async (req: Request, res: Response) => {
         const { orderId } = req.params;
 
         const order = await Order.findById(orderId);
         if (!order) {
             throw new NotFoundError("Orden no Encontrada");
+        }
+
+        // Check if order has an approved payment - if so, prevent hard deletion
+        if (order.paymentId) {
+            const payment = await Payment.findById(order.paymentId);
+            if (payment && payment.status === PaymentStatus.Approved) {
+                throw new RequestConflictError(
+                    "No se puede eliminar órdenes con pagos aprobados. Por favor archiva la orden en su lugar."
+                );
+            }
+        }
+
+        // Prevent hard deletion of delivered orders (completed transactions)
+        if (order.status === OrderStatus.Delivered) {
+            throw new RequestConflictError(
+                "No se puede eliminar órdenes entregadas. Por favor archiva la orden en su lugar."
+            );
         }
 
         // Start transaction to ensure that all db operations were completed
@@ -720,11 +756,12 @@ export class OrderController {
                     );
                 }
             }
+            
             // Cancelled/Expired/Delivered: No stock changes needed
             // Cancelled/Expired: Stock already released
             // Delivered: Keep stock as sold (completed transaction)
 
-            //! Delete Payment info of the order if it exists
+            //! Delete Payment info of the order if it exists (only for non-approved payments)
             if (order.paymentId) {
                 await Payment.deleteOne(
                     { _id: order.paymentId },
@@ -748,5 +785,32 @@ export class OrderController {
             // close session
             session.endSession(); 
         }
+    }
+
+    //! ADMIN - SOFT DELETE / ARCHIVE ORDER
+    // Preserves order and payment data for audit trail and dispute resolution
+    // Sets archivedAt timestamp and tracks which admin archived it
+    static archiveOrder = async (req: Request, res: Response) => {
+        const { orderId } = req.params;
+
+        const order = await Order.findById(orderId);
+        if (!order) {
+            throw new NotFoundError("Orden no Encontrada");
+        }
+
+        // Prevent archiving already archived orders
+        if (order.archivedAt !== null && order.archivedAt !== undefined) {
+            throw new RequestConflictError("Esta orden ya ha sido archivada");
+        }
+
+        // Set archive timestampt
+        order.archivedAt = new Date();
+
+        await order.save();
+
+        res.status(200).json({
+            message: "Orden archivada correctamente",
+            order: formatLean(order.toObject())
+        });
     }
 }

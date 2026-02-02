@@ -31,3 +31,47 @@ export async function calculateShipping(
     
     return shippingRates[method] || 0;
 }
+
+// Shipping options configuration - must match frontend definition
+export const shippingOptions = [
+    {
+        id: "santiago",
+        name: "Envío dentro de Santiago",
+        price: 3990,
+        estimatedDays: "2-3 días",
+    },
+    {
+        id: "rm",
+        name: "RM",
+        price: 4990,
+        estimatedDays: "3-5 días",
+        zones: "Melipilla, María Pinto, Tiltil, San Pedro, Alhué, El Monte, Isla de Maipo, Pirque, San José de Maipo, Colina, Lampa, Curacaví, Buin, Talagante",
+    },
+    {
+        id: "envio-s",
+        name: "Envío S",
+        price: 5990,
+        estimatedDays: "3-5 días",
+        zones: "Coquimbo, O'Higgins, Maule, Ñuble, Biobío, Valparaíso",
+    },
+    {
+        id: "envio-m",
+        name: "Envío M",
+        price: 6990,
+        estimatedDays: "4-6 días",
+        zones: "Antofagasta, Atacama, Araucanía",
+    },
+    {
+        id: "envio-l",
+        name: "Envío L",
+        price: 7990,
+        estimatedDays: "5-7 días",
+        zones: "Arica y Parinacota, Tarapacá, Los Ríos, Los Lagos, Magallanes",
+    },
+    {
+        id: "aysen",
+        name: "Aysén",
+        price: 11990,
+        estimatedDays: "7-10 días",
+    },
+];

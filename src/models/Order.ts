@@ -70,6 +70,10 @@ export interface OrderInterface extends Document {
     // If it is not tapped, then the Notification Emails will be sent using the Order Reference. 
     saveData: boolean, 
 
+    // Soft deletion / Archiving for orders with approved payments
+    // archivedAt is set when order is archived instead of hard-deleted
+    archivedAt: Date
+
     // Automatic Timestamps
     createdAt: Date; 
     updatedAt: Date; 
@@ -260,6 +264,12 @@ const orderSchema : Schema = new Schema(
             type: Date, 
             required: false, 
             default: null
+        },
+        archivedAt: {
+            type: Date,
+            required: false,
+            default: null,
+            index: true, // Important for filtering archived orders
         }
     }, 
     {
@@ -284,6 +294,7 @@ toJSON(orderSchema);
 orderSchema.index({ 'customer.email': 1, createdAt: -1 });
 orderSchema.index({ 'customer.userId': 1, createdAt: -1 }); // Critical for searching current auth user orders
 orderSchema.index({ status: 1, createdAt: -1, stockReservationExpiresAt: 1 }); // Critical for cleanup job & admin search
+orderSchema.index({ archivedAt: 1, createdAt: -1 }); // For archived orders audit trail
 
 //* Single Field Indexes
 orderSchema.index({ trackingNumber: 1 }); // For order tracking
