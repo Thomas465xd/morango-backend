@@ -136,8 +136,8 @@ router.get("/admin",
         }),
     query("sortBy")
         .optional()
-        .isIn(["date"])
-        .withMessage("Invalid sorting criteria. use 'date'"),
+        .isIn(["date", "amount"])
+        .withMessage("Invalid sorting criteria. use 'date' or 'amount'"),
     query("sortOrder")
         .optional()
         .isIn(["asc", "desc"])

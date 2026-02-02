@@ -11,6 +11,7 @@ import { formatLean } from "../utils/json";
 import { PaymentEmails } from "../emails/payment";
 import { createToken } from "../utils/token";
 import { NotAuthorizedError } from "../errors/not-authorized";
+import { InternalServerError } from "../errors/server-error";
 
 export class PaymentController {
     //* ADMIN - get all payments
@@ -28,7 +29,7 @@ export class PaymentController {
 
         const filters : any = { };
 
-        //* Filter by Order status
+        //* Filter by Payment status
         if (status) {
             filters.status = status; 
         }
@@ -72,6 +73,8 @@ export class PaymentController {
         //? Sorting options
         if (sortBy === "date") {
             sort = { createdAt: sortOrder }; 
+        } else if (sortBy === "amount") {
+            sort = { amount: sortOrder }
         }
 
         // Get the total number of payments
@@ -114,6 +117,10 @@ export class PaymentController {
         const { paymentId } = req.params; 
 
         const payment = await Payment.findById(paymentId)
+            .populate({
+                path: 'orderId',
+                select: 'trackingNumber customer.email customer.name customer.surname total status'
+            })
             .lean(); 
         if(!payment) {
             throw new NotFoundError("Pago no Encontrado")
@@ -126,11 +133,7 @@ export class PaymentController {
             throw new NotFoundError("Orden no Encontrada"); 
         }
 
-        res.status(200).json({
-            orderStatus: order.status,
-            trackingNumber: order.trackingNumber,
-            payment: formatLean(payment),
-        });
+        res.status(200).json(formatLean(payment));
     }
 
     //* Auth user - get payment details 
@@ -139,6 +142,10 @@ export class PaymentController {
         const userId = req.user._id; 
 
         const payment = await Payment.findById(paymentId)
+            .populate({
+                path: 'orderId',
+                select: 'trackingNumber customer.email customer.name customer.surname total status'
+            })
             .lean(); 
         if(!payment) {
             throw new NotFoundError("Pago no Encontrado")
@@ -156,11 +163,7 @@ export class PaymentController {
             throw new ForbiddenError("No tienes permiso para ver este pago")
         }
 
-        res.status(200).json({
-            orderStatus: order.status,
-            trackingNumber: order.trackingNumber,
-            payment: formatLean(payment),
-        });
+        res.status(200).json(formatLean(payment));
     }
 
     //* Get order payment status for order 
@@ -447,7 +450,7 @@ export class PaymentController {
             res.status(200).send("OK")
             return
         }
-
+        
         // Update payment with MP data
         payment.mpPaymentId = mpPayment.id.toString();
         payment.mpStatus = mpPayment.status!;
@@ -563,7 +566,7 @@ export class PaymentController {
         // Validate retry token is not expired
         // probably redundant since it should already throw with order expiration validation since same timestampt
         if (paymentRecord.retryTokenExpiresAt < new Date()) {
-            throw new ResourceExpiredError("El pago ha expirado.")
+            throw new ResourceExpiredError("El reintento de pago ha expirado.")
         }
 
         // Create new preference (same as createPreference logic)
@@ -628,68 +631,83 @@ export class PaymentController {
 
     //^ ADMIN Process Refund
     static processRefund = async (req: Request, res: Response) => {
-        const { paymentId } = req.params;
+        try {
+            const { paymentId } = req.params;
+    
+            const payment = await Payment.findById(paymentId);
+            if (!payment) {
+                throw new NotFoundError("Pago no Encontrado")
+            }
+    
+            // Idempotency
+            if (payment.status === PaymentStatus.Refunded) {
+                res.status(200).json({ message: "El Pago ya fue reembolsado"})
+                return
+            }
+    
+            // Check if payment was approved
+            if (payment.status !== PaymentStatus.Approved) {
+                throw new RequestConflictError("Solo se pueden reembolsar pagos aprobados.")
+            }
 
-        const payment = await Payment.findById(paymentId);
-        if (!payment) {
-            throw new NotFoundError("Pago no Encontrado")
+            if (payment.mpStatus === "refunded") {
+                res.status(200).json({ message: "El pago ya fue reembolsado (MP)" });
+                return
+            }
+
+    
+            const order = await Order.findOne({ paymentId: payment.id });
+
+            if (!order) {
+                throw new NotFoundError("Orden asociada no encontrada");
+            }
+
+            // Check if order can be refunded | order should be cancelled before being refunded, 
+            // since that manages the stock releases and solds.
+            if (order.status !== OrderStatus.Cancelled) {
+                throw new RequestConflictError("Solo se pueden reembolsar ordenes Canceladas.")
+            }
+    
+            // Process refund through MP API
+            const refund = await refundPayment(payment.mpPaymentId);
+    
+            // // Return stock to inventory (if order was Processing or Sent) 
+            // deprecated since flow should be admin cancels order, then refund becomes available, it separates logic
+            // if (order.status === OrderStatus.Processing || order.status === OrderStatus.Sent) {
+            //     for (const item of order.items) {
+            //         await Product.updateOne(
+            //             { _id: item.productId },
+            //             { $inc: { stock: item.quantity } }
+            //         );
+            //     }
+            //}
+    
+            // Update payment status
+            payment.status = PaymentStatus.Refunded;
+            payment.mpStatus = "refunded";
+            payment.metadata = {
+                ...payment.metadata,
+                refund
+            };
+            await payment.save();
+    
+            // Update order status
+            // order.status = OrderStatus.Cancelled;
+            // await order.save();
+    
+            //* Send refund notification email
+            await PaymentEmails.Refunded.send(order, payment); 
+    
+            res.status(200).json({
+                message: "Reembolso procesado exitosamente",
+                paymentId: payment.id,
+                paymentStatus: payment.status,
+                orderNumber: order.trackingNumber,
+                refundAmount: payment.amount // for partial refunds refund.amount
+            });
+        } catch (error) {
+            console.log(error)
+            throw new InternalServerError()
         }
-
-        // Idempotency
-        if (payment.status === PaymentStatus.Refunded) {
-            res.status(200).json({ message: "El Pago ya fue reembolsado"})
-            return
-        }
-
-        // Check if payment was approved
-        if (payment.status !== PaymentStatus.Approved) {
-            throw new RequestConflictError("Solo se pueden reembolsar pagos aprobados.")
-        }
-
-        const order = await Order.findOne({ paymentId: payment.id });
-
-        // Check if order can be refunded | order should be cancelled before being refunded, 
-        // since that manages the stock releases and solds.
-        if (order.status !== OrderStatus.Cancelled) {
-            throw new RequestConflictError("Solo se pueden reembolsar ordenes Canceladas.")
-        }
-
-        // Process refund through MP API
-        const refund = await refundPayment(payment.mpPaymentId);
-
-        // // Return stock to inventory (if order was Processing or Sent) 
-        // deprecated since flow should be admin cancels order, then refund becomes available, it separates logic
-        // if (order.status === OrderStatus.Processing || order.status === OrderStatus.Sent) {
-        //     for (const item of order.items) {
-        //         await Product.updateOne(
-        //             { _id: item.productId },
-        //             { $inc: { stock: item.quantity } }
-        //         );
-        //     }
-        //}
-
-        // Update payment status
-        payment.status = PaymentStatus.Refunded;
-        payment.mpStatus = "refunded";
-        payment.metadata = {
-            ...payment.metadata,
-            refund
-        };
-        await payment.save();
-
-        // Update order status
-        // order.status = OrderStatus.Cancelled;
-        // await order.save();
-
-        //* Send refund notification email
-        await PaymentEmails.Refunded.send(order, payment); 
-
-        res.status(200).json({
-            message: "Reembolso procesado exitosamente",
-            paymentId: payment.id,
-            paymentStatus: payment.status,
-            orderNumber: order.trackingNumber,
-            refundAmount: payment.amount // for partial refunds refund.amount
-        });
     }
 }

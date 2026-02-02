@@ -140,6 +140,8 @@ const paymentSchema : Schema = new Schema(
 paymentSchema.index({ orderId: 1 });
 paymentSchema.index({ mpPaymentId: 1 });
 paymentSchema.index({ mpPreferenceId: 1 });
+paymentSchema.index({ amount: 1 }); 
+paymentSchema.index({ createdAt: -1 }); 
 
 // Use the toJSON function from json.ts file
 toJSON(paymentSchema);

@@ -107,7 +107,7 @@ describe("/api/payments/admin Input Validation Tests", () => {
         expect(response.body.errors[0].field).toEqual("endDate"); 
     })
 
-    it("Returns a 400 if ?sortOrder or ?sortBy query param is invalid (not asc or desc and not 'date')", async () => {
+    it("Returns a 400 if ?sortOrder or ?sortBy query param is invalid (not asc or desc and not 'date' or 'amount')", async () => {
         const admin = await global.createUser(true, true); 
 
         const { order } = await global.createOrder(); 
@@ -121,7 +121,7 @@ describe("/api/payments/admin Input Validation Tests", () => {
             .expect(400)
 
         const r2 = await request(server)
-            .get(`/api/payments/admin?sortOrder=asc&sortBy=createdAt`) // should be sortBy=date
+            .get(`/api/payments/admin?sortOrder=asc&sortBy=createdAt`) // should be sortBy=date or amount
             .send()
             .set("Cookie", global.setCookie(admin.id))
             .expect(400)

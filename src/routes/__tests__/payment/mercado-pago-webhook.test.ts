@@ -30,35 +30,62 @@ import resend from "../../../config/resend";
 // })
 
 describe("mpWebhook Request Handler Tests", () => {
-	it("404 if payment is processed but order is nowhere to be found", async () => {
-		const { order } = await global.createOrder(); // Pending order
-		
+    it("handles missing order gracefully and does nothing", async () => {
+        const { order } = await global.createOrder();
         await global.createPayment(order);
 
-		(paymentClient.get as jest.Mock).mockResolvedValue({
-			id: "mp-payment-id",
-			status: "approved",
-			external_reference: order.trackingNumber,
-			payment_method_id: "visa",
-		});
+        (paymentClient.get as jest.Mock).mockResolvedValue({
+            id: "mp-payment-id",
+            status: "approved",
+            external_reference: order.trackingNumber,
+        });
 
-        // Delete order
-        await order.deleteOne(); 
+        await order.deleteOne();
 
-		await request(server)
-			.post("/api/payments/webhook")
-			.send({
-				type: "payment",
-				data: { id: "mp-payment-id" },
-			})
-			.expect(404);
-	});
+        await request(server)
+            .post("/api/payments/webhook")
+            .send({
+                type: "payment",
+                data: { id: "mp-payment-id" },
+            })
+            .expect(200);
 
-	it("404 if payment is processed but payment record is nowhere to be found", async () => {
-		const { order } = await global.createOrder(); // Pending order
-	
+        //! Side effects
+        expect(refundClient.create).not.toHaveBeenCalled(); 
+        expect(resend.emails.send).not.toHaveBeenCalled();  // shouldn't have sent any payment status email
+    });
+
+    it("handles missing payment gracefully", async () => {
+        const { order } = await global.createOrder();
         const payment = await global.createPayment(order);
 
+        (paymentClient.get as jest.Mock).mockResolvedValue({
+            id: "mp-payment-id",
+            status: "approved",
+            external_reference: order.trackingNumber,
+        });
+
+        await payment.deleteOne();
+
+        await request(server)
+            .post("/api/payments/webhook")
+            .send({
+                type: "payment",
+                data: { id: "mp-payment-id" },
+            })
+            .expect(200);
+
+        expect(refundClient.create).not.toHaveBeenCalled();
+        expect(resend.emails.send).not.toHaveBeenCalled();
+    });
+
+	it("Tests idempotency for an already approved payment trying to be processed. Returns 200 OK. ", async () => {
+		const { order } = await global.createOrder(); // Pending order
+		const payment = await global.createPayment(order);
+
+        payment.status = PaymentStatus.Approved; 
+        await payment.save(); 
+
 		(paymentClient.get as jest.Mock).mockResolvedValue({
 			id: "mp-payment-id",
 			status: "approved",
@@ -66,16 +93,17 @@ describe("mpWebhook Request Handler Tests", () => {
 			payment_method_id: "visa",
 		});
 
-        // Delete payment
-        await payment.deleteOne();  
-
 		await request(server)
 			.post("/api/payments/webhook")
 			.send({
 				type: "payment",
 				data: { id: "mp-payment-id" },
 			})
-			.expect(404);
+			.expect(200);
+
+        //! Side effects
+        expect(refundClient.create).not.toHaveBeenCalled(); 
+        expect(resend.emails.send).not.toHaveBeenCalled();  // shouldn't have sent any payment status email
 	});
 
 	it("200 OK if it processes approved payment and moves order to Processing", async () => {
@@ -158,7 +186,7 @@ describe("mpWebhook Request Handler Tests", () => {
     });
 
     //! Important tests
-    it("410 Resource Gone if late payment for expired order and refund", async () => {
+    it("Handles gracefully Resource Gone if late payment for expired order and refund process", async () => {
         const { order, firstProduct } = await global.createOrder();
 
 		const payment = await global.createPayment(order, "mp-payment-id");
@@ -187,7 +215,7 @@ describe("mpWebhook Request Handler Tests", () => {
                 type: "payment",
                 data: { id: "mp-payment-id" }
             })
-            .expect(410);
+            .expect(200);
 
         // Expect resend to have been called one time for refund email
         expect(resend.emails.send).toHaveBeenCalledTimes(1); 
