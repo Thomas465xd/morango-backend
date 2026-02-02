@@ -631,83 +631,78 @@ export class PaymentController {
 
     //^ ADMIN Process Refund
     static processRefund = async (req: Request, res: Response) => {
-        try {
-            const { paymentId } = req.params;
-    
-            const payment = await Payment.findById(paymentId);
-            if (!payment) {
-                throw new NotFoundError("Pago no Encontrado")
-            }
-    
-            // Idempotency
-            if (payment.status === PaymentStatus.Refunded) {
-                res.status(200).json({ message: "El Pago ya fue reembolsado"})
-                return
-            }
-    
-            // Check if payment was approved
-            if (payment.status !== PaymentStatus.Approved) {
-                throw new RequestConflictError("Solo se pueden reembolsar pagos aprobados.")
-            }
+        const { paymentId } = req.params;
 
-            if (payment.mpStatus === "refunded") {
-                res.status(200).json({ message: "El pago ya fue reembolsado (MP)" });
-                return
-            }
-
-    
-            const order = await Order.findOne({ paymentId: payment.id });
-
-            if (!order) {
-                throw new NotFoundError("Orden asociada no encontrada");
-            }
-
-            // Check if order can be refunded | order should be cancelled before being refunded, 
-            // since that manages the stock releases and solds.
-            if (order.status !== OrderStatus.Cancelled) {
-                throw new RequestConflictError("Solo se pueden reembolsar ordenes Canceladas.")
-            }
-    
-            // Process refund through MP API
-            const refund = await refundPayment(payment.mpPaymentId);
-    
-            // // Return stock to inventory (if order was Processing or Sent) 
-            // deprecated since flow should be admin cancels order, then refund becomes available, it separates logic
-            // if (order.status === OrderStatus.Processing || order.status === OrderStatus.Sent) {
-            //     for (const item of order.items) {
-            //         await Product.updateOne(
-            //             { _id: item.productId },
-            //             { $inc: { stock: item.quantity } }
-            //         );
-            //     }
-            //}
-    
-            // Update payment status
-            payment.status = PaymentStatus.Refunded;
-            payment.mpStatus = "refunded";
-            payment.metadata = {
-                ...payment.metadata,
-                refund
-            };
-            await payment.save();
-    
-            // Update order status
-            // order.status = OrderStatus.Cancelled;
-            // await order.save();
-    
-            //* Send refund notification email
-            await PaymentEmails.Refunded.send(order, payment); 
-    
-            res.status(200).json({
-                message: "Reembolso procesado exitosamente",
-                paymentId: payment.id,
-                paymentStatus: payment.status,
-                orderNumber: order.trackingNumber,
-                refundAmount: payment.amount // for partial refunds refund.amount
-            });
-        } catch (error) {
-            console.log(error)
-            throw new InternalServerError()
+        const payment = await Payment.findById(paymentId);
+        if (!payment) {
+            throw new NotFoundError("Pago no Encontrado")
         }
+
+        // Idempotency
+        if (payment.status === PaymentStatus.Refunded) {
+            res.status(200).json({ message: "El Pago ya fue reembolsado"})
+            return
+        }
+
+        // Check if payment was approved
+        if (payment.status !== PaymentStatus.Approved) {
+            throw new RequestConflictError("Solo se pueden reembolsar pagos aprobados.")
+        }
+
+        if (payment.mpStatus === "refunded") {
+            res.status(200).json({ message: "El pago ya fue reembolsado (MP)" });
+            return
+        }
+
+
+        const order = await Order.findOne({ paymentId: payment.id });
+
+        if (!order) {
+            throw new NotFoundError("Orden asociada no encontrada");
+        }
+
+        // Check if order can be refunded | order should be cancelled before being refunded, 
+        // since that manages the stock releases and solds.
+        if (order.status !== OrderStatus.Cancelled) {
+            throw new RequestConflictError("Solo se pueden reembolsar ordenes Canceladas.")
+        }
+
+        // Process refund through MP API
+        const refund = await refundPayment(payment.mpPaymentId);
+
+        // // Return stock to inventory (if order was Processing or Sent) 
+        // deprecated since flow should be admin cancels order, then refund becomes available, it separates logic
+        // if (order.status === OrderStatus.Processing || order.status === OrderStatus.Sent) {
+        //     for (const item of order.items) {
+        //         await Product.updateOne(
+        //             { _id: item.productId },
+        //             { $inc: { stock: item.quantity } }
+        //         );
+        //     }
+        //}
+
+        // Update payment status
+        payment.status = PaymentStatus.Refunded;
+        payment.mpStatus = "refunded";
+        payment.metadata = {
+            ...payment.metadata,
+            refund
+        };
+        await payment.save();
+
+        // Update order status
+        // order.status = OrderStatus.Cancelled;
+        // await order.save();
+
+        //* Send refund notification email
+        await PaymentEmails.Refunded.send(order, payment); 
+
+        res.status(200).json({
+            message: "Reembolso procesado exitosamente",
+            paymentId: payment.id,
+            paymentStatus: payment.status,
+            orderNumber: order.trackingNumber,
+            refundAmount: payment.amount // for partial refunds refund.amount
+        });
     }
 }

@@ -129,8 +129,8 @@ describe("mpWebhook Request Handler Tests", () => {
 			})
 			.expect(200);
 
-        // Expect resend to have been called one time for Approved Payment email
-        expect(resend.emails.send).toHaveBeenCalledTimes(1); 
+        // Expect resend to have been called two times, one for Approved Payment email and one for NewOrder email sent to admin
+        expect(resend.emails.send).toHaveBeenCalledTimes(2); 
 
         const soldStock = await Product.findById(firstProduct.id); 
         expect(soldStock.reserved).toEqual(0); 

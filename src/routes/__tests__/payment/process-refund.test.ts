@@ -155,7 +155,6 @@ describe("processRefund Request Handler Tests", () => {
         await order.save(); 
         
         payment.status = PaymentStatus.Approved; 
-        payment.mpStatus = "refunded";
         await payment.save(); 
 
 		const response = await request(server)

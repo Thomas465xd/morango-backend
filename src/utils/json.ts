@@ -1,4 +1,4 @@
-import { Schema } from "mongoose";
+import mongoose, { Schema } from "mongoose";
 
 // Map virtual USER model attributes to return in responses
 export default function toJSON(model: Schema, ...fields: string[]) {
@@ -16,13 +16,42 @@ export default function toJSON(model: Schema, ...fields: string[]) {
 }
 
 // When .lean() is used...
-export function formatLean<T extends Record<string, any>>(obj: T) {
-    if (!obj) return obj;
+export function formatLean<T>(value: T): T {
+    // Arrays
+    if (Array.isArray(value)) {
+        return value.map(formatLean) as T;
+    }
 
-    const { _id, __v, ...rest } = obj;
+    // Dates → keep intact
+    if (value instanceof Date) {
+        return value;
+    }
 
-    return {
-        id: _id?.toString?.() ?? _id,
-        ...rest,
-    };
+    // ObjectId → string
+    if (value instanceof mongoose.Types.ObjectId) {
+        return value.toString() as T;
+    }
+
+    // Plain objects only
+    if (value && typeof value === "object") {
+        const obj = value as Record<string, any>;
+        const { _id, __v, ...rest } = obj;
+
+        const formatted: Record<string, any> = {};
+
+        if (_id !== undefined) {
+            formatted.id =
+                _id instanceof mongoose.Types.ObjectId
+                    ? _id.toString()
+                    : _id;
+        }
+
+        for (const key in rest) {
+            formatted[key] = formatLean(rest[key]);
+        }
+
+        return formatted as T;
+    }
+
+    return value;
 }

@@ -93,12 +93,8 @@ describe("getPaymentById Request Handler Tests", () => {
 
         // console.log(response.body)
 
-        // Order Info
-        expect(response.body.orderStatus).toEqual(OrderStatus.Pending); 
-        expect(response.body.trackingNumber).toEqual(order.trackingNumber)
-
         // Payment info
-        expect(response.body.payment).toBeDefined(); 
-        expect(response.body.payment.id).toEqual(payment.id);
+        expect(response.body.id).toEqual(payment.id);
+        expect(response.body.amount).toEqual(order.total); 
     })
 }); 

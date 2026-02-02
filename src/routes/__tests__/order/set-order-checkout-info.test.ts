@@ -386,7 +386,7 @@ describe("setOrderCheckoutInfo Request Handler Tests", () => {
 
         // Run expiration job (pass time in future to force expiration)
         const futureTime = Date.now() + (20 * 60000); // 20 minutes in future
-        await expireOrdersJob(futureTime);
+            await expireOrdersJob(futureTime);
 
         await request(server)
             .patch(`/api/orders/checkout/${order.id}`)
