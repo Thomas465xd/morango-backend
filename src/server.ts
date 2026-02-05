@@ -61,17 +61,22 @@ app.set("trust proxy", true);
 app.use(bodyParser.json());
 
 //? Cookies config middleware
-app.use(cookieSession({
+app.use(cookieSession({ 
     name: "session", 
     signed: false, 
-    sameSite: "none", // This allows the cookie to be sent through different domains instead of just origin one. 
+    httpOnly: true,
+
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
     secure: process.env.NODE_ENV === "production",
+
     domain: process.env.NODE_ENV === "production" // Allow cookie to be shared across subdomains
         ? ".morangojoyas.cl" // sameSite none only allows for api to be on subdomain of the main domain
         : undefined,
 
-    httpOnly: true,
 }))
+
+console.log(process.env.NODE_ENV);
+
 
 //? Logs
 app.use(morgan("dev"));
