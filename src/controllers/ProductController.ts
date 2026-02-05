@@ -280,7 +280,6 @@ export class ProductController {
     //* Get Product by ID
     static getProductById = async (req: Request, res: Response) => {
         const { productId } = req.params; 
-        console.log(productId)
 
         const product = await Product.findById(productId).lean(); 
         if (!product) {

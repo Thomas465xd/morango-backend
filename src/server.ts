@@ -72,10 +72,7 @@ app.use(cookieSession({
     domain: process.env.NODE_ENV === "production" // Allow cookie to be shared across subdomains
         ? ".morangojoyas.cl" // sameSite none only allows for api to be on subdomain of the main domain
         : undefined,
-
 }))
-
-console.log(process.env.NODE_ENV);
 
 
 //? Logs

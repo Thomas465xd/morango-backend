@@ -237,6 +237,21 @@ export class PaymentController {
             currency_id: "CLP"
         }));
 
+        //! This need verification from a real payment, since finalPrice should already include shipping costs... 
+        // Include shipping cost as a line item so MP total matches order.total
+        if (order.shipping > 0) {
+            items.push({
+                id: "shipping",
+                title: `Envío ${order.shippingMethod}`,
+                description: `Costo de envío vía ${order.shippingMethod}`,
+                picture_url: "",
+                category_id: "services",
+                quantity: 1,
+                unit_price: order.shipping,
+                currency_id: "CLP"
+            });
+        }
+
         // Create Preference
         const preference = await preferenceClient.create({
             body: {
@@ -256,9 +271,9 @@ export class PaymentController {
                         : undefined,
                     },
                 back_urls: {
-                    success: `${process.env.FRONTEND_URL}/checkout/success`,
-                    failure: `${process.env.FRONTEND_URL}/checkout/failure`,
-                    pending: `${process.env.FRONTEND_URL}/checkout/pending`
+                    success: `${process.env.FRONTEND_URL}/checkout/success/${order._id}`,
+                    failure: `${process.env.FRONTEND_URL}/checkout/failure/${order._id}`,
+                    pending: `${process.env.FRONTEND_URL}/checkout/pending/${order._id}`
                 },
                 ...(isTest
                 ? {}
@@ -274,7 +289,7 @@ export class PaymentController {
                     },
                 }),
 
-                auto_return: process.env.NODE_ENV === "production" ? "approved" : undefined,
+                auto_return: process.env.NODE_ENV === "production" ? "all" : undefined,
                 notification_url: process.env.NODE_ENV === "production" ? `${process.env.BACKEND_URL}/api/payments/webhook` : process.env.NGROK_URL,
                 external_reference: order.trackingNumber,
                 statement_descriptor: "Morango Joyas",
@@ -283,7 +298,7 @@ export class PaymentController {
                 expiration_date_to: order.stockReservationExpiresAt.toISOString()
             }, 
             requestOptions: {
-                idempotencyKey: `create-preference-${order.id}-${Date.now()}`
+                idempotencyKey: `create-preference-${order.id}`
             }
         });
 
@@ -354,6 +369,8 @@ export class PaymentController {
             body: {
                 transaction_amount: order.total,
                 token,
+                description: `Orden ${order.trackingNumber} — Morango Joyas`,
+                statement_descriptor: "Morango Joyas",
                 payment_method_id,
                 installments,
                 issuer_id,
@@ -365,7 +382,7 @@ export class PaymentController {
                 notification_url: process.env.NODE_ENV === "production" ? `${process.env.BACKEND_URL}/api/payments/webhook` : process.env.NGROK_URL,
             }, 
             requestOptions: {
-                idempotencyKey: `create-payment-${order.id}-${Date.now()}`
+                idempotencyKey: `create-payment-${order.id}`
             }
         });
 
@@ -470,8 +487,6 @@ export class PaymentController {
 
         //! Store rejection reason ONLY for rejected/cancelled | UX
         if (mpPayment.status === 'rejected' || mpPayment.status === 'cancelled') {
-            // console.log(mpPayment.status_detail)
-
             const rejectionMessages: Record<string, string> = {
                 cc_rejected_insufficient_amount: "Fondos insuficientes",
                 cc_rejected_bad_filled_card_number: "Número de tarjeta inválido",
@@ -486,43 +501,47 @@ export class PaymentController {
             payment.rejectionReason = userMessage; 
         }
 
-        
-        payment.status = statusMap[mpPayment.status!] || PaymentStatus.Pending;
         await payment.save();
         
-        //& Handle payment outcome
-        if (mpPayment.status === 'approved') {
+        //& Handle payment outcome (wrapped in try/catch to guarantee 200 response to MP)
+        try {
+            if (mpPayment.status === 'approved') {
 
-            //! EDGE CASE Order already expired → refund path
-            if (order.status === OrderStatus.Expired) {
-                console.warn(
-                    `Late approved payment for expired order ${order.trackingNumber}`
-                );
+                //! EDGE CASE Order already expired → refund path
+                if (order.status === OrderStatus.Expired) {
+                    console.warn(
+                        `Late approved payment for expired order ${order.trackingNumber}`
+                    );
 
-                // Process refund through MP API
-                const refund = await refundPayment(payment.mpPaymentId);
+                    // Process refund through MP API
+                    const refund = await refundPayment(payment.mpPaymentId);
 
-                // mark order/payment
-                payment.status = PaymentStatus.Refunded;
-                payment.mpStatus = "refunded"; 
-                payment.metadata = {
-                    ...payment.metadata,
-                    refund
-                };
-                await payment.save();
+                    // mark order/payment
+                    payment.status = PaymentStatus.Refunded;
+                    payment.mpStatus = "refunded"; 
+                    payment.metadata = {
+                        ...payment.metadata,
+                        refund
+                    };
+                    await payment.save();
 
-                //* Send refund notification email
-                await PaymentEmails.Refunded.send(order, payment); 
+                    //* Send refund notification email
+                    await PaymentEmails.Refunded.send(order, payment); 
 
-                console.warn("Pago Reembolsado (orden expirada).")
-                res.status(200).send("OK")
-                return
+                    console.warn("Pago Reembolsado (orden expirada).")
+                    res.status(200).send("OK")
+                    return
+                }
+
+                //* Normal flow
+                await handleApprovedPayment(order, payment);
+            } else if (mpPayment.status === 'rejected' || mpPayment.status === 'cancelled') { 
+                await handleFailedPayment(order, payment); // payment.rejectionReason for payment rejection reason in email 
             }
-
-            //* Normal flow
-            await handleApprovedPayment(order, payment);
-        } else if (mpPayment.status === 'rejected' || mpPayment.status === 'cancelled') { 
-            await handleFailedPayment(order, payment); // payment.rejectionReason for payment rejection reason in email 
+        } catch (handlerError) {
+            // Log the error but still return 200 to MP to prevent excessive retries.
+            // Payment status is already saved above, so the core data is persisted.
+            console.error("Error in webhook payment handler:", handlerError);
         }
 
         res.status(200).send("OK")
@@ -581,6 +600,20 @@ export class PaymentController {
             currency_id: "CLP"
         }));
 
+        // Include shipping cost as a line item so MP total matches order.total
+        if (order.shipping > 0) {
+            items.push({
+                id: "shipping",
+                title: `Envío ${order.shippingMethod}`,
+                description: `Costo de envío vía ${order.shippingMethod}`,
+                picture_url: "",
+                category_id: "services",
+                quantity: 1,
+                unit_price: order.shipping,
+                currency_id: "CLP"
+            });
+        }
+
         const preference = await preferenceClient.create({
             body: {
                 items,
@@ -593,11 +626,11 @@ export class PaymentController {
                     }
                 },
                 back_urls: {
-                    success: `${process.env.FRONTEND_URL}/checkout/success`,
-                    failure: `${process.env.FRONTEND_URL}/checkout/failure`,
-                    pending: `${process.env.FRONTEND_URL}/checkout/pending`
+                    success: `${process.env.FRONTEND_URL}/checkout/success/${order._id}`,
+                    failure: `${process.env.FRONTEND_URL}/checkout/failure/${order._id}`,
+                    pending: `${process.env.FRONTEND_URL}/checkout/pending/${order._id}`
                 },
-                auto_return: process.env.NODE_ENV === "production" ? "approved" : undefined,
+                auto_return: process.env.NODE_ENV === "production" ? "all" : undefined,
                 notification_url: process.env.NODE_ENV === "production" ? `${process.env.BACKEND_URL}/api/payments/webhook` : process.env.NGROK_URL,
                 external_reference: order.trackingNumber,
                 statement_descriptor: "Morango Joyas",
@@ -606,7 +639,7 @@ export class PaymentController {
                 expiration_date_to: order.stockReservationExpiresAt.toISOString()
             }, 
             requestOptions: {
-                idempotencyKey: `create-preference-${order.id}-${Date.now()}`
+                idempotencyKey: `retry-preference-${order.id}-${paymentRecord.retryToken}`
             }
         });
 
