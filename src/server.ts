@@ -62,8 +62,14 @@ app.use(bodyParser.json());
 
 //? Cookies config middleware
 app.use(cookieSession({
+    name: "session", 
     signed: false, 
+    sameSite: "none" // This allows the cookie to be sent through different domains instead of just origin one. 
     secure: process.env.NODE_ENV === "production",
+    domain: process.env.NODE_ENV === "production" // Allow cookie to be shared across subdomains
+        ? ".morangojoyas.cl" // sameSite none only allows for api to be on subdomain of the main domain
+        : undefined,
+
     httpOnly: true
 }))
 
