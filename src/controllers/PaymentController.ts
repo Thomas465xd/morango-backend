@@ -365,26 +365,45 @@ export class PaymentController {
         }
 
         // Crear payment en Mercado Pago
-        const mpPayment = await paymentClient.create({
-            body: {
-                transaction_amount: order.total,
-                token,
-                description: `Orden ${order.trackingNumber} — Morango Joyas`,
-                statement_descriptor: "Morango Joyas",
-                payment_method_id,
-                installments,
-                issuer_id,
-                payer: {
-                    email: payer.email,
-                    identification: payer.identification
-                },
-                external_reference: order.trackingNumber,
-                notification_url: process.env.NODE_ENV === "production" ? `${process.env.BACKEND_URL}/api/payments/webhook` : process.env.NGROK_URL,
-            }, 
-            requestOptions: {
-                idempotencyKey: `create-payment-${order.id}`
-            }
-        });
+        let mpPayment;
+        try {
+            mpPayment = await paymentClient.create({
+                body: {
+                    // CLP requires integer amounts — ensure no decimals
+                    transaction_amount: Math.round(order.total),
+                    token,
+                    description: `Orden ${order.trackingNumber} — Morango Joyas`,
+                    statement_descriptor: "Morango Joyas",
+                    payment_method_id,
+                    installments: Number(installments),
+                    issuer_id: issuer_id,
+                    payer: {
+                        email: payer.email,
+                        identification: {
+                            type: String(payer.identification.type),
+                            number: String(payer.identification.number),
+                        }
+                    },
+                    external_reference: order.trackingNumber,
+                    notification_url: process.env.NODE_ENV === "production" ? `${process.env.BACKEND_URL}/api/payments/webhook` : process.env.NGROK_URL,
+                }, 
+                requestOptions: {
+                    idempotencyKey: `create-payment-${order.id}-${Date.now()}`
+                }
+            });
+        } catch (mpError: any) {
+            console.error("MercadoPago create payment error:", {
+                message: mpError?.message,
+                cause: mpError?.cause,
+                status: mpError?.status || mpError?.statusCode,
+                body: mpError?.body || mpError?.response?.data,
+                orderId: order.id,
+                trackingNumber: order.trackingNumber,
+            });
+            throw new InternalServerError(
+                mpError?.message || "Error al procesar el pago con MercadoPago"
+            );
+        }
 
         // Persistir mpPaymentId
         const payment = await Payment.findOne({ orderId: order.id });
