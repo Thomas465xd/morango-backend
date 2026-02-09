@@ -392,6 +392,31 @@ export class PaymentController {
                 }
             });
         } catch (mpError: any) {
+            // Check if this is a "Card Token not found" error (code 2006).
+            // This happens when the Payment Brick (initialized with preferenceId)
+            // already processed the card payment internally through the preference,
+            // consuming the token before the backend could use it.
+            // In this case, the payment was already created by MP — the webhook
+            // will handle the status update. Return 202 so the client redirects
+            // to the pending page and polls for the authoritative status.
+            const isTokenConsumed = mpError?.cause?.some?.(
+                (c: any) => c.code === 2006 || c.code === "2006"
+            ) || mpError?.message?.includes?.("Card Token not found");
+
+            if (isTokenConsumed) {
+                console.warn("Card Token already consumed (likely processed by Payment Brick via preference):", {
+                    orderId: order.id,
+                    trackingNumber: order.trackingNumber,
+                });
+
+                // Return 202 Accepted — payment is being processed via webhook
+                res.status(202).json({
+                    status: "processing",
+                    message: "Pago en proceso. El resultado se confirmará en breve.",
+                });
+                return;
+            }
+
             console.error("MercadoPago create payment error:", {
                 message: mpError?.message,
                 cause: mpError?.cause,
