@@ -302,7 +302,7 @@ export class PaymentController {
             }
         });
 
-        // console.log(preference)
+        console.log(preference)
 
         // Create or update payment record
         let payment = await Payment.findOne({ orderId: order._id })
@@ -459,10 +459,13 @@ export class PaymentController {
 
     //^ Mercado Pago Webhook
     static mpWebhook = async (req: Request, res: Response) => {
-        // MP sends notifications for various events
-        const { type, data } = req.body; 
+        // MP sends notifications in two formats:
+        // 1. JSON body: { type: "payment", data: { id: "123" } }
+        // 2. Query params: ?id=123&topic=payment
+        const type = req.body?.type || req.query.topic;
+        const paymentId = req.body?.data?.id || req.query["data.id"] || req.query.id;
 
-        console.log("Webhook received", { type, data })
+        console.log("Webhook received", { type, paymentId, bodyType: req.body?.type, queryTopic: req.query.topic })
 
         // We only care about payment notifications
         if(type !== "payment") {
@@ -470,10 +473,13 @@ export class PaymentController {
             return
         }
 
-        // Get Payment ID from notification
-        const paymentId = data.id; 
+        if (!paymentId) {
+            console.warn("Webhook received without payment ID");
+            res.status(200).send("OK");
+            return;
+        }
 
-        //! Fetch payment details from MP
+        //! Fetch payment details from MP (with retry for race condition)
         let mpPayment;
         try {
             mpPayment = await paymentClient.get({ id: paymentId });
