@@ -202,6 +202,8 @@ export class PaymentController {
         const { orderId } = req.body; 
         
         const isTest = process.env.NODE_ENV !== "production";
+        console.log(process.env.NODE_ENV); 
+        console.log(isTest)
 
         // Find order
         const order = await Order.findById(orderId); 
