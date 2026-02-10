@@ -367,6 +367,16 @@ export class PaymentController {
         // Crear payment en Mercado Pago
         let mpPayment;
         try {
+            // Diagnostic: log token info for debugging
+            console.log("Creating MP payment:", {
+                orderId: order.id,
+                trackingNumber: order.trackingNumber,
+                hasToken: !!token,
+                tokenPreview: token ? `${token.slice(0, 8)}...${token.slice(-4)}` : "MISSING",
+                payment_method_id,
+                installments,
+                amount: Math.round(order.total),
+            });
             mpPayment = await paymentClient.create({
                 body: {
                     // CLP requires integer amounts — ensure no decimals
