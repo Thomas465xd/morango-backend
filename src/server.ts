@@ -48,6 +48,9 @@ if(!process.env.BACKEND_URL) {
     throw new Error("BACKEND_URL must be defined")
 }
 
+if(!process.env.NODE_ENV) {
+    throw new Error("NODE_ENV must be defined")
+}
 
 
 connectDB()

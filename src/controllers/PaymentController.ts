@@ -271,6 +271,13 @@ export class PaymentController {
                     phone: order.customer.phone
                         ? { number: order.customer.phone }
                         : undefined,
+                    address: order.shippingAddress.street
+                        ? {
+                            zip_code: order.shippingAddress.zipCode ?? "",
+                            street_name: order.shippingAddress.street,
+                            street_number: "",
+                        }
+                        : undefined,
                     },
                 back_urls: {
                     success: `${process.env.FRONTEND_URL}/checkout/success/${order._id}`,
@@ -379,6 +386,31 @@ export class PaymentController {
                 installments,
                 amount: Math.round(order.total),
             });
+
+            // Build additional_info items for fraud prevention & approval rate
+            const additionalItems = order.items.map(item => ({
+                id: item.productId.toString(),
+                title: item.productName,
+                description: item.productName,
+                picture_url: item.productImage,
+                category_id: "jewelry",
+                quantity: item.quantity,
+                unit_price: item.finalPrice,
+            }));
+
+            // Include shipping as additional item if applicable
+            if (order.shipping > 0) {
+                additionalItems.push({
+                    id: "shipping",
+                    title: `Envío ${order.shippingMethod}`,
+                    description: `Costo de envío vía ${order.shippingMethod}`,
+                    picture_url: "",
+                    category_id: "services",
+                    quantity: 1,
+                    unit_price: order.shipping,
+                });
+            }
+
             mpPayment = await paymentClient.create({
                 body: {
                     // CLP requires integer amounts — ensure no decimals
@@ -391,10 +423,37 @@ export class PaymentController {
                     issuer_id: issuer_id,
                     payer: {
                         email: payer.email,
+                        first_name: order.customer.name,
+                        last_name: order.customer.surname,
                         identification: {
                             type: String(payer.identification.type),
                             number: String(payer.identification.number),
                         }
+                    },
+                    additional_info: {
+                        items: additionalItems,
+                        payer: {
+                            first_name: order.customer.name,
+                            last_name: order.customer.surname,
+                            phone: order.customer.phone
+                                ? { area_code: "", number: order.customer.phone }
+                                : undefined,
+                            address: order.shippingAddress.street
+                                ? {
+                                    zip_code: order.shippingAddress.zipCode ?? "",
+                                    street_name: order.shippingAddress.street,
+                                    street_number: "",
+                                }
+                                : undefined,
+                        },
+                        shipments: {
+                            receiver_address: {
+                                zip_code: order.shippingAddress.zipCode ?? "",
+                                street_name: order.shippingAddress.street,
+                                city_name: order.shippingAddress.city,
+                                state_name: order.shippingAddress.region?.toString() ?? "",
+                            },
+                        },
                     },
                     external_reference: order.trackingNumber,
                     notification_url: process.env.NODE_ENV === "production" ? `${process.env.BACKEND_URL}/api/payments/webhook` : process.env.NGROK_URL,
@@ -683,15 +742,35 @@ export class PaymentController {
                     name: order.customer.name,
                     surname: order.customer.surname,
                     email: order.customer.email,
-                    phone: {
-                        number: order.customer.phone
-                    }
+                    phone: order.customer.phone
+                        ? { number: order.customer.phone }
+                        : undefined,
+                    address: order.shippingAddress.street
+                        ? {
+                            zip_code: order.shippingAddress.zipCode ?? "",
+                            street_name: order.shippingAddress.street,
+                            street_number: "",
+                        }
+                        : undefined,
                 },
                 back_urls: {
                     success: `${process.env.FRONTEND_URL}/checkout/success/${order._id}`,
                     failure: `${process.env.FRONTEND_URL}/checkout/failure/${order._id}`,
                     pending: `${process.env.FRONTEND_URL}/checkout/pending/${order._id}`
                 },
+                ...(process.env.NODE_ENV === "production"
+                    ? {
+                        shipments: {
+                            receiver_address: {
+                                zip_code: order.shippingAddress.zipCode ?? undefined,
+                                street_name: order.shippingAddress.street,
+                                city_name: order.shippingAddress.city,
+                                state_name: order.shippingAddress.region?.toString(),
+                                country_name: order.shippingAddress.country,
+                            },
+                        },
+                    }
+                    : {}),
                 auto_return: process.env.NODE_ENV === "production" ? "all" : undefined,
                 notification_url: process.env.NODE_ENV === "production" ? `${process.env.BACKEND_URL}/api/payments/webhook` : process.env.NGROK_URL,
                 external_reference: order.trackingNumber,

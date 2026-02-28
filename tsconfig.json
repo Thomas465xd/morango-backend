@@ -10,7 +10,8 @@
         "strict": false,
         "sourceMap": true,
         "esModuleInterop": true,
-        "declaration": true
+        "declaration": true,
+        "types": ["jest"]
     },
     "include": ["src/**/*.ts"]
 }
